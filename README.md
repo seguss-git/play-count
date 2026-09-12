@@ -1,6 +1,8 @@
-# White Team Play Count
+# DJFL 4
 
-Sideline app for tracking plays per kid and attendance for a youth football team, so nobody falls short of the league minimum.
+Sideline app for DJFL fourth grade: play counts, attendance and personnel units, so nobody falls short of the league minimum.
+
+Live at **https://seguss-git.github.io/play-count/** — open it on a phone and Add to Home Screen. Both squads and the defensive depth chart are already built in, so there is nothing to set up.
 
 Single file, no build, no server. Open `index.html` in any phone browser. Everything is saved on the device.
 
@@ -24,5 +26,5 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
 
 ## Putting it on a phone
 
-- Open the file from iCloud, Google Drive, email, or a GitHub Pages link, then use **Add to Home Screen** so it launches full-screen like an app.
+- Open https://seguss-git.github.io/play-count/ in Safari or Chrome, then use **Add to Home Screen** so it launches full-screen with the DJFL 4 icon.
 - Data is per device. Use **Backup** on the Settings tab to move it to another phone.
