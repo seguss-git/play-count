@@ -493,6 +493,20 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     ['Willcocks', 19, 81, 50, 69]
   ];
 
+  // Practice attendance carried over from the team spreadsheet.
+  var SEED_ATT = {
+    '2026-08-17': 'Bickmeyer,Bongiorno,Chernichaw,Cohen,Croswell,Derrico,Farnum,Fischer,Fletcher,Fulk,Kretzman,Kumar,Leuffer,McAnany,Olsen,Perry,Pewarski,Pezley,Pulaski,Reed,Roberto,Sawicki,Scardigli,Seguss,Sheaffer,Sokolik,Stevens,Stever,Strand,Thistle,Trotta,Turowski,Walker,Willcocks',
+    '2026-08-18': 'Bickmeyer,Bongiorno,Chernichaw,Cohen,Croswell,Derrico,Farnum,Fischer,Fletcher,Fulk,Griffith,Kretzman,Kumar,McAnany,Olsen,Perry,Pewarski,Pezley,Pulaski,Rand,Reed,Roberto,Scardigli,Seguss,Sheaffer,Sokolik,Stevens,Stever,Strand,Thistle,Trotta,Turowski,Walker,Willcocks',
+    '2026-08-19': 'Bickmeyer,Bongiorno,Boyle,Chernichaw,Cohen,Croswell,Derrico,Farnum,Fischer,Fletcher,Fulk,Griffith,Kumar,McAnany,Olsen,Perry,Pewarski,Pezley,Pulaski,Rand,Reed,Roberto,Scardigli,Seguss,Sokolik,Stevens,Stever,Strand,Thistle,Trotta,Turowski,Walker,Willcocks',
+    '2026-08-20': 'Boyle,Drohojowski,Griffith,Leuffer,Rand,Wood',
+    '2026-09-01': 'Bickmeyer,Bongiorno,Boyle,Chernichaw,Cohen,Croswell,Derrico,Dolce,Drohojowski,Farnum,Fischer,Fulk,Griffith,Higgins,Kretzman,Kumar,Leuffer,Love,Masters,McAnany,McNulty,Mohamed,Murphy,Olsen,Perry,Pewarski,Pezley,Pulaski,Reed,Roberto,Sawicki,Scardigli,Seguss,Sheaffer,Sokolik,Spatola,Stevens,Stever,Strand,Thistle,Trotta,Turowski,Walker,Willcocks,Wood',
+    '2026-09-03': 'Bongiorno,Boyle,Chernichaw,Cohen,Derrico,Dolce,Farnum,Fischer,Kretzman,Kumar,Leuffer,Love,Masters,McAnany,McNulty,Mohamed,Murphy,Olsen,Perry,Pewarski,Pezley,Pulaski,Rand,Reed,Roberto,Sawicki,Scardigli,Seguss,Sheaffer,Sokolik,Spatola,Stevens,Strand,Thistle,Trotta,Turowski,Walker,Willcocks,Wood',
+    '2026-09-04': 'Bickmeyer,Bongiorno,Boyle,Chernichaw,Cohen,Croswell,Derrico,Dolce,Farnum,Fischer,Fletcher,Kretzman,Kumar,Love,Masters,McAnany,McNulty,Mohamed,Perry,Pewarski,Pezley,Pulaski,Reed,Roberto,Sawicki,Scardigli,Seguss,Sheaffer,Sokolik,Spatola,Stevens,Stever,Strand,Thistle,Trotta,Turowski,Walker,Wood',
+    '2026-09-08': 'Bongiorno,Boyle,Chernichaw,Cohen,Croswell,Derrico,Dolce,Fischer,Fulk,Higgins,Kretzman,Kumar,Leuffer,Love,Masters,McAnany,McNulty,Mohamed,Murphy,Olsen,Perry,Pewarski,Pezley,Pulaski,Rand,Reed,Roberto,Sawicki,Scardigli,Sheaffer,Sokolik,Spatola,Stevens,Stever,Thistle,Trotta,Turowski,Walker,Willcocks,Wood',
+    '2026-09-09': 'Bongiorno,Chernichaw,Cohen,Croswell,Derrico,Drohojowski,Farnum,Fischer,Griffith,Kumar,Leuffer,Masters,McAnany,Mohamed,Murphy,Olsen,Perry,Pewarski,Pezley,Pulaski,Reed,Roberto,Sawicki,Scardigli,Seguss,Sheaffer,Sokolik,Spatola,Stever,Strand,Thistle,Trotta,Turowski,Willcocks',
+    '2026-09-11': 'Bickmeyer,Bongiorno,Boyle,Chernichaw,Cohen,Croswell,Derrico,Drohojowski,Farnum,Fischer,Fletcher,Griffith,Kumar,Leuffer,Love,Masters,McAnany,McNulty,Mohamed,Murphy,Olsen,Perry,Pewarski,Pezley,Pulaski,Rand,Reed,Roberto,Sawicki,Scardigli,Seguss,Sheaffer,Sokolik,Spatola,Stevens,Stever,Strand,Thistle,Trotta,Turowski,Willcocks,Wood'
+  };
+
   // How much each quality matters at a spot. Tuned for youth defence.
   var FIT = {
     interior:   { size: 0.50, power: 0.25, agility: 0.15, speed: 0.10 },
@@ -519,6 +533,27 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     'HAMMER, Roberto'
   ].join('\n');
 
+  // Past practices come across from the team spreadsheet, matched on last name.
+  function seedAttendance() {
+    const byLast = {};
+    S.roster.forEach(pl => {
+      const k = lastName(pl).toLowerCase();
+      if (!(k in byLast)) byLast[k] = pl.id;
+    });
+    let made = 0;
+    Object.keys(SEED_ATT).sort().forEach(date => {
+      const ids = [];
+      SEED_ATT[date].split(',').forEach(n => {
+        const id = byLast[n.trim().toLowerCase()];
+        if (id && ids.indexOf(id) < 0) ids.push(id);
+      });
+      if (!ids.length) return;
+      S.events.push({ id: uid(), type: 'practice', date: date, opponent: '', present: ids, plays: [] });
+      made++;
+    });
+    return made > 0;
+  }
+
   // A fresh install already knows the squads and the defensive depth chart.
   // An existing install only gets the pieces it is missing, so nothing is duplicated
   // and nothing anyone has edited is overwritten.
@@ -535,6 +570,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       touched = true;
     }
     if (!S.units.length) { importChartText(SEED_CHART); touched = true; }
+    if (!S.events.length && seedAttendance()) touched = true;
     if (touched) save();
   }
 
