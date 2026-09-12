@@ -377,6 +377,7 @@
       </div>
       <p class="muted small">Everything is saved on this device only. Use Backup to move it to another phone.</p>
       <p class="muted small" id="verLine"></p>
+      <div class="row wrap"><button class="btn small" id="checkUpdBtn">Check for update now</button><span class="muted small grow" id="updStatus"></span></div>
     </div>
     <div class="card">
       <h2>Google Sheet</h2>
@@ -457,7 +458,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.8';
+  const APP_VERSION = '2026.09.12.9';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -746,7 +747,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function renderHeader() {
     const g = curGame();
     $('#hdrSub').textContent = g ? S.team + ' · ' + evLabel(g) + ' · ' + fmtDate(g.date) : S.team + ' team';
-    $('#hdrRight').textContent = g ? (S.mode === 'tap' ? g.plays.length + ' taps' : 'Play ' + g.plays.length) : '';
+    $('#hdrRight').textContent = g ? (S.mode === 'tap' ? g.plays.length + ' taps' : 'Play ' + g.plays.length) : 'v' + APP_VERSION;
     document.title = 'DJFL 4';
   }
 
@@ -1788,15 +1789,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#updateBar').style.display = '';
   }
   async function checkForUpdate(force) {
-    if (!navigator.onLine || !/^https?:/.test(location.protocol)) return;
-    if (!force && Date.now() - lastCheck < 20000) return;
+    if (!/^https?:/.test(location.protocol)) return null;
+    if (!force && Date.now() - lastCheck < 20000) return null;
     lastCheck = Date.now();
     try {
-      const r = await fetch('index.html?u=' + Date.now(), { cache: 'no-store' });
-      const t = await r.text();
-      const m = t.match(/APP_VERSION = '([^']+)'/);
-      if (m && m[1] !== APP_VERSION) offerUpdate();
-    } catch (e) { /* offline or blocked, try again later */ }
+      const r = await fetch('version.json?u=' + Date.now(), { cache: 'no-store' });
+      const j = await r.json();
+      if (j && j.version && j.version !== APP_VERSION) { if (force === 'now') applyUpdate(); else offerUpdate(); }
+      return j && j.version ? j.version : null;
+    } catch (e) { return null; }
   }
   if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) {
     navigator.serviceWorker.register('sw.js').then(reg => {
@@ -1817,6 +1818,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     setTimeout(() => checkForUpdate(true), 4000);
   }
   $('#updateBar').onclick = applyUpdate;
+  $('#checkUpdBtn').onclick = async () => {
+    const st = $('#updStatus');
+    st.textContent = 'Checking...';
+    const v = await checkForUpdate('now');
+    const sw = ('serviceWorker' in navigator) ? (navigator.serviceWorker.controller ? 'offline copy ready' : 'no offline copy yet') : 'no worker support';
+    if (!v) st.textContent = 'Could not reach the server. This phone: ' + APP_VERSION + ' · ' + sw;
+    else if (v === APP_VERSION) st.textContent = 'Up to date, ' + v + ' · ' + sw;
+    else st.textContent = 'Server has ' + v + ', this phone has ' + APP_VERSION + '. Updating now...';
+  };
 
   window.addEventListener('storage', (e) => { if (e.key === KEY) { S = load(); render(); } });
 

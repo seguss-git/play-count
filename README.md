@@ -31,7 +31,7 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
 
 The app installs a service worker on first visit, so it opens with no signal and keeps working. The page itself is always fetched network-first with a four second timeout, so anyone with a connection gets the newest version on their next open, and anyone without one gets the copy from last time. While open, it checks for a new version every five minutes and whenever the network comes back. If nothing is in progress it reloads on its own; during a game it shows a bar at the top to tap when you are ready. The version number is at the bottom of Settings.
 
-When shipping a change, bump `APP_VERSION` in index.html and `VERSION` in sw.js so old caches are cleared.
+When shipping a change, bump `APP_VERSION` in index.html, `VERSION` in sw.js, and the value in version.json. The app compares its own version against version.json (a few bytes, fetched past the CDN cache) whenever it comes to the foreground. The current version shows in the header when no game is open, and Settings has a Check for update now button that reports what the phone can reach.
 
 ## Putting it on a phone
 
