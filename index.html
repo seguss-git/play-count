@@ -246,7 +246,7 @@
       <h2>Roster <span class="muted plain" id="rosterCount"></span></h2>
       <p class="muted small" style="margin:0 0 6px">Add jersey numbers in the # box when you have them. Absences are handled per game on the Attendance tab.</p>
       <div id="rosterList"></div>
-      <div class="row" style="margin-top:10px"><button class="btn small" id="loadWhiteBtn">Load White roster</button><span class="muted small">Re-adds any of the 25 league-sheet players who are missing.</span></div>
+      <div class="row" style="margin-top:10px" id="loadTeamRow"><button class="btn small" id="loadTeamBtn">Load team roster</button><span class="muted small">Re-adds anyone from your team link who is missing.</span></div>
     </div>
   </section>
 
@@ -301,15 +301,23 @@
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
 
-  // 2026 White team roster (from the league sheet). Numbers can be added on the Roster tab.
-  const WHITE_ROSTER = ['John Bongiorno', 'Fox Boyle', 'Jackson Chernichaw', 'Coleman Croswell', 'Tristan Derrico',
-    'Ellis Drohojowski', 'Henry Farnum', 'KJ Kumar', 'Charlie Leuffer', 'Andrew Love', 'Connor McAnany', 'Henry McNulty',
-    'Cal Mohamed', 'Will Murphy', 'George Pewarski', 'Tyler Pezley', 'Mac Rand', 'Cyrus Roberto', 'Kai Seguss',
-    'Charles Sokolik', 'Brady Stever', 'Ben Thistle', 'Harrison Trotta', 'Thomas Turowski', 'Henry Wood'];
+  // No roster is stored in this file. It arrives once through a personal link ending in #r=...
+  // and is then kept on the device. Names can also just be typed on the Roster tab.
+  function rosterFromLink() {
+    const m = (location.hash || '').match(/[#&]r=([^&]*)/);
+    if (!m) return null;
+    try {
+      const bin = atob(decodeURIComponent(m[1]).replace(/-/g, '+').replace(/_/g, '/'));
+      const txt = decodeURIComponent(Array.prototype.map.call(bin, c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      const names = txt.split(',').map(s => s.trim()).filter(Boolean);
+      return names.length ? names : null;
+    } catch (e) { return null; }
+  }
 
   // ---------- state ----------
   const defaults = () => ({
     team: 'White', minPlays: 12, fieldSize: 11, mode: 'lineup',
+    template: [],        // names from the personal link, used by the Load roster button
     roster: [],          // {id, num, name}
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
@@ -317,6 +325,7 @@
     lineup: []           // sticky on-field selection (lineup mode)
   });
   let S = load();
+  applyLink();
 
   function load() {
     try {
@@ -325,9 +334,15 @@
       const old = localStorage.getItem(OLD_KEY);
       if (old) return migrate(JSON.parse(old));
     } catch (e) { console.warn('load failed', e); }
-    const s = defaults();
-    WHITE_ROSTER.forEach(n => s.roster.push({ id: uid(), num: '', name: n }));
-    return s;
+    return defaults();
+  }
+  function applyLink() {
+    const names = rosterFromLink();
+    if (!names) return;
+    S.template = names;
+    if (!S.roster.length) names.forEach(n => S.roster.push({ id: uid(), num: '', name: n }));
+    save();
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* file:// */ }
   }
   function migrate(o) {
     const s = defaults();
@@ -533,7 +548,8 @@
     const list = $('#rosterList');
     const ros = sortRoster(S.roster);
     $('#rosterCount').textContent = ros.length ? '(' + ros.length + ')' : '';
-    if (!ros.length) { list.innerHTML = '<div class="empty">No players yet.</div>'; return; }
+    $('#loadTeamRow').style.display = S.template.length ? '' : 'none';
+    if (!ros.length) { list.innerHTML = '<div class="empty">No players yet. Paste the team into the box above.</div>'; return; }
     list.innerHTML = '';
     ros.forEach(p => {
       const row = document.createElement('div'); row.className = 'rrow';
@@ -602,10 +618,10 @@
     S.events.forEach(e => { if (e.date >= today()) e.present.push(p.id); });
     return true;
   }
-  function loadWhiteRoster() {
+  function loadTeamRoster() {
     const have = new Set(S.roster.map(p => p.name.toLowerCase()));
     let added = 0;
-    WHITE_ROSTER.forEach(n => { if (!have.has(n.toLowerCase())) { addPlayer('', n); added++; } });
+    S.template.forEach(n => { if (!have.has(n.toLowerCase())) { addPlayer('', n); added++; } });
     save(); render(); toast(added ? 'Added ' + added + ' player' + (added === 1 ? '' : 's') : 'Roster already loaded');
   }
 
@@ -685,7 +701,7 @@
     });
     if (added) { $('#bulkInput').value = ''; save(); render(); toast('Added ' + added + ' player' + (added === 1 ? '' : 's')); }
   };
-  $('#loadWhiteBtn').onclick = loadWhiteRoster;
+  $('#loadTeamBtn').onclick = loadTeamRoster;
 
   $('#teamName').onchange = (e) => { S.team = e.target.value.trim() || 'White'; save(); render(); };
   $('#minPlays').onchange = (e) => { S.minPlays = Math.max(0, Number(e.target.value) || 0); save(); render(); };
@@ -719,8 +735,12 @@
     };
     r.readAsText(f);
   };
-  $('#resetBtn').onclick = () => ask('Delete every game, practice, and play count, and reset the roster to the White league sheet?', () => {
-    localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY); S = load(); save(); render();
+  $('#resetBtn').onclick = () => ask('Delete every game, practice, and play count, and start the roster over?', () => {
+    const keep = S.template.slice();
+    localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY);
+    S = load(); S.template = keep;
+    keep.forEach(n => S.roster.push({ id: uid(), num: '', name: n }));
+    save(); render();
   });
 
   window.addEventListener('storage', (e) => { if (e.key === KEY) { S = load(); render(); } });
