@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<title>White Team Play Count</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #273449; --line: #334155;
+    --text: #f1f5f9; --muted: #94a3b8; --accent: #f8fafc; --accent-text: #0f172a;
+    --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    --tap: 56px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    touch-action: manipulation; overscroll-behavior: none; }
+  body { display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+  header { padding: 12px 16px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  header h1 { margin: 0; font-size: 20px; letter-spacing: .02em; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  main { flex: 1; overflow-y: auto; padding: 0 12px 16px; }
+  nav { display: flex; border-top: 1px solid var(--line); background: var(--panel);
+    padding-bottom: env(safe-area-inset-bottom); }
+  nav button { flex: 1; background: none; border: 0; color: var(--muted); font-size: 13px; padding: 10px 0 8px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  nav button .ic { font-size: 20px; }
+  nav button.active { color: var(--accent); }
+  .view { display: none; } .view.active { display: block; }
+
+  button { font: inherit; cursor: pointer; }
+  .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 16px; font-size: 16px; min-height: 48px; }
+  .btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; }
+  .btn.danger { color: var(--red); border-color: var(--red); background: transparent; }
+  .btn.small { min-height: 36px; padding: 6px 12px; font-size: 14px; border-radius: 8px; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row.wrap { flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .card { background: var(--panel); border-radius: 14px; padding: 12px; margin: 10px 0; }
+  .card h2 { margin: 0 0 8px; font-size: 15px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .card h2 .plain { text-transform: none; font-weight: 400; }
+  input, select { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; font-size: 16px; min-height: 44px; width: 100%; }
+  input[type=number] { width: 90px; }
+  label.field { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .muted { color: var(--muted); } .small { font-size: 13px; }
+  .hint { margin: 8px 4px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+
+  /* Player grid (game view) */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+  .chip { position: relative; background: var(--panel2); border: 2px solid var(--line); border-radius: 12px;
+    min-height: 72px; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text); user-select: none; }
+  .chip .num { font-size: 22px; font-weight: 800; line-height: 1; }
+  .chip .name { font-size: 12px; margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .cnt { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--muted); font-weight: 600; }
+  .chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .chip.on .cnt { color: #475569; }
+  .chip.low::after, .chip.mid::after { content: ""; position: absolute; left: 6px; top: 6px; width: 8px; height: 8px; border-radius: 50%; }
+  .chip.low::after { background: var(--red); }
+  .chip.mid::after { background: var(--amber); }
+
+  .sticky-actions { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 30%); padding: 12px 0 4px; }
+  .record { width: 100%; font-size: 20px; min-height: var(--tap); }
+  .onfield { font-size: 14px; color: var(--muted); text-align: center; margin-bottom: 8px; }
+  .onfield b { color: var(--text); font-size: 18px; }
+  .onfield.over b { color: var(--red); }
+
+  /* Counts */
+  .crow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .crow:last-child { border-bottom: 0; }
+  .crow .pn { width: 34px; font-weight: 800; text-align: right; }
+  .crow .pname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crow .bar { flex: 2; height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; }
+  .crow .bar i { display: block; height: 100%; background: var(--green); border-radius: 5px; }
+  .crow.low .bar i { background: var(--red); } .crow.mid .bar i { background: var(--amber); }
+  .crow .pc { width: 60px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .crow .need { font-size: 11px; color: var(--red); display: block; font-weight: 400; }
+  .stat { display: flex; gap: 8px; }
+  .stat div { flex: 1; background: var(--panel2); border-radius: 10px; padding: 8px; text-align: center; }
+  .stat .v { font-size: 22px; font-weight: 800; } .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+
+  /* Roster and games */
+  .rrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .rrow:last-child { border-bottom: 0; }
+  .rrow input.n { width: 64px; text-align: center; }
+  .rrow.absent { opacity: .5; }
+  .toggle { min-width: 60px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--panel2); color: var(--muted); }
+  .tag.live { background: var(--green); color: #052e16; font-weight: 700; }
+
+  /* Log, dialogs, toast */
+  .log { font-size: 13px; color: var(--muted); max-height: 160px; overflow-y: auto; }
+  .log div { padding: 4px 0; border-bottom: 1px solid var(--line); }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 16px; width: min(92vw, 420px); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--accent); color: var(--accent-text);
+    padding: 10px 16px; border-radius: 999px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 10; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1 id="hdrTitle">White Team</h1><div class="sub" id="hdrSub">Play Count</div></div>
+  <div class="sub" id="hdrRight"></div>
+</header>
+
+<main>
+  <!-- GAME VIEW -->
+  <section class="view active" id="view-game">
+    <div id="noGame" class="card" style="display:none">
+      <h2>No game in progress</h2>
+      <div class="row">
+        <input id="oppInput" placeholder="Opponent (e.g. Blue)" class="grow">
+        <button class="btn primary" id="startGameBtn">Start Game</button>
+      </div>
+      <p class="muted small">Add players on the Roster tab first, then start a game.</p>
+    </div>
+    <div id="gameArea" style="display:none">
+      <p class="muted small hint">Tap players to put them on the field, then hit <b>Record Play</b>. The lineup stays selected between plays. Tap a player again to sub them out.</p>
+      <div class="grid" id="playerGrid"></div>
+      <div class="sticky-actions">
+        <div class="onfield" id="onFieldInfo"></div>
+        <button class="btn primary record" id="recordBtn">Record Play</button>
+        <div class="row" style="margin-top:8px">
+          <button class="btn grow" id="undoBtn">Undo Last</button>
+          <button class="btn grow" id="clearSelBtn">Clear Lineup</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Play log</h2>
+        <div class="log" id="playLog"></div>
+      </div>
+      <div class="card">
+        <h2>Game</h2>
+        <div class="row wrap">
+          <input id="oppEdit" placeholder="Opponent" class="grow">
+          <button class="btn" id="endGameBtn">End Game</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COUNTS VIEW -->
+  <section class="view" id="view-counts">
+    <div class="card">
+      <div class="stat" id="countStats"></div>
+    </div>
+    <div class="card">
+      <h2>Plays per player <span class="muted plain">(fewest first)</span></h2>
+      <div id="countList"></div>
+    </div>
+    <div class="card">
+      <h2>Share</h2>
+      <div class="row wrap">
+        <button class="btn grow" id="copyBtn">Copy Summary</button>
+        <button class="btn grow" id="shareBtn">Share</button>
+        <button class="btn grow" id="csvBtn">Download CSV</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROSTER VIEW -->
+  <section class="view" id="view-roster">
+    <div class="card">
+      <h2>Add player</h2>
+      <form id="addForm" class="row">
+        <input id="addNum" type="number" inputmode="numeric" placeholder="#" min="0" max="99">
+        <input id="addName" placeholder="Name" class="grow" autocomplete="off">
+        <button class="btn primary" type="submit">Add</button>
+      </form>
+      <p class="muted small" style="margin:8px 0 0">Or paste a whole roster separated by commas, like <code>12 Jack, 7 Owen, 22 Liam</code>:</p>
+      <div class="row" style="margin-top:6px">
+        <input id="bulkInput" placeholder="12 Jack, 7 Owen, 22 Liam ..." class="grow">
+        <button class="btn" id="bulkBtn">Import</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Roster <span class="muted plain" id="rosterCount"></span></h2>
+      <p class="muted small" style="margin:0 0 6px">Mark a player <b>Out</b> if they are absent or hurt so they do not show on the field grid or count against the minimum.</p>
+      <div id="rosterList"></div>
+    </div>
+  </section>
+
+  <!-- GAMES / SETTINGS VIEW -->
+  <section class="view" id="view-games">
+    <div class="card">
+      <h2>Settings</h2>
+      <div class="row wrap">
+        <div><label class="field">Team name</label><input id="teamName" style="width:140px"></div>
+        <div><label class="field">Min plays / game</label><input id="minPlays" type="number" inputmode="numeric" min="0"></div>
+        <div><label class="field">Players on field</label><input id="fieldSize" type="number" inputmode="numeric" min="1" max="15"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Games</h2>
+      <div id="gamesList"></div>
+    </div>
+    <div class="card">
+      <h2>Season totals</h2>
+      <div id="seasonList"></div>
+    </div>
+    <div class="card">
+      <h2>Data</h2>
+      <div class="row wrap">
+        <button class="btn grow" id="exportBtn">Backup (JSON)</button>
+        <button class="btn grow" id="importBtn">Restore</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none">
+        <button class="btn danger grow" id="resetBtn">Reset Everything</button>
+      </div>
+      <p class="muted small">Everything is saved on this device only. Use Backup to move it to another phone.</p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-view="game" class="active"><span class="ic">🏈</span>Game</button>
+  <button data-view="counts"><span class="ic">📊</span>Counts</button>
+  <button data-view="roster"><span class="ic">👥</span>Roster</button>
+  <button data-view="games"><span class="ic">📅</span>Games</button>
+</nav>
+
+<dialog id="confirmDlg">
+  <p id="confirmMsg" style="margin:0 0 16px"></p>
+  <div class="row">
+    <button class="btn grow" id="confirmNo">Cancel</button>
+    <button class="btn danger grow" id="confirmYes">Yes</button>
+  </div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  const KEY = 'playcount.v1';
+  const $ = (s) => document.querySelector(s);
+  const uid = () => Math.random().toString(36).slice(2, 9);
+
+  // ---------- state ----------
+  const defaults = () => ({
+    team: 'White', minPlays: 12, fieldSize: 11,
+    roster: [],          // {id, num, name, active}
+    games: [],           // {id, opponent, date, plays: [[playerId,...]]}
+    currentGameId: null,
+    lineup: []           // sticky on-field selection
+  });
+  let S = load();
+
+  function load() {
+    try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(defaults(), JSON.parse(raw)); }
+    catch (e) { console.warn('load failed', e); }
+    return defaults();
+  }
+  function save() { localStorage.setItem(KEY, JSON.stringify(S)); }
+
+  const curGame = () => S.games.find(g => g.id === S.currentGameId) || null;
+  const lastGame = () => curGame() || S.games[S.games.length - 1] || null;
+  const player = (id) => S.roster.find(p => p.id === id);
+  const activeRoster = () => S.roster.filter(p => p.active);
+  const num = (p) => (p.num === '' || p.num == null) ? 999 : Number(p.num);
+  const sortRoster = (arr) => arr.slice().sort((a, b) => (num(a) - num(b)) || a.name.localeCompare(b.name));
+
+  function countsFor(game) {
+    const c = {};
+    S.roster.forEach(p => c[p.id] = 0);
+    if (game) game.plays.forEach(pl => pl.forEach(id => { if (id in c) c[id]++; }));
+    return c;
+  }
+  function level(count) {
+    if (!S.minPlays || count >= S.minPlays) return 'ok';
+    return count >= S.minPlays * 0.5 ? 'mid' : 'low';
+  }
+
+  // ---------- rendering ----------
+  function render() { renderHeader(); renderGame(); renderCounts(); renderRoster(); renderGames(); }
+
+  function renderHeader() {
+    const g = curGame();
+    $('#hdrTitle').textContent = S.team + ' Team';
+    $('#hdrSub').textContent = g ? 'vs ' + (g.opponent || 'TBD') + ' · ' + g.date : 'Play Count';
+    $('#hdrRight').textContent = g ? 'Play ' + g.plays.length : '';
+    document.title = S.team + ' Team Play Count';
+  }
+
+  function renderGame() {
+    const g = curGame();
+    $('#noGame').style.display = g ? 'none' : '';
+    $('#gameArea').style.display = g ? '' : 'none';
+    if (!g) return;
+    const counts = countsFor(g);
+    const grid = $('#playerGrid');
+    grid.innerHTML = '';
+    const ros = sortRoster(activeRoster());
+    if (!ros.length) grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No active players. Add some on the Roster tab.</div>';
+    ros.forEach(p => {
+      const on = S.lineup.includes(p.id);
+      const b = document.createElement('button');
+      b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
+      b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="num">' + esc(numStr(p)) + '</span><span class="name">' + esc(p.name) + '</span>';
+      b.onclick = () => toggle(p.id);
+      grid.appendChild(b);
+    });
+    const n = lineupIds().length;
+    const info = $('#onFieldInfo');
+    info.innerHTML = '<b>' + n + '</b> on field' + (S.fieldSize ? ' <span class="muted">/ ' + S.fieldSize + '</span>' : '');
+    info.classList.toggle('over', !!S.fieldSize && n > S.fieldSize);
+    $('#recordBtn').disabled = n === 0;
+    $('#recordBtn').textContent = 'Record Play ' + (g.plays.length + 1);
+    $('#undoBtn').disabled = g.plays.length === 0;
+    if (document.activeElement !== $('#oppEdit')) $('#oppEdit').value = g.opponent || '';
+
+    const log = $('#playLog');
+    if (!g.plays.length) { log.innerHTML = '<div class="muted">No plays yet.</div>'; return; }
+    log.innerHTML = g.plays.map((pl, i) =>
+      '<div><b>#' + (i + 1) + '</b> · ' + pl.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(' ') + '</div>'
+    ).reverse().join('');
+  }
+
+  function renderCounts() {
+    const g = lastGame();
+    const list = $('#countList');
+    if (!g) { list.innerHTML = '<div class="empty">No game yet. Start one on the Game tab.</div>'; $('#countStats').innerHTML = ''; return; }
+    const counts = countsFor(g);
+    const ros = activeRoster();
+    const sorted = ros.slice().sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b));
+    const below = sorted.filter(p => counts[p.id] < S.minPlays).length;
+    const max = Math.max(S.minPlays, 1, ...sorted.map(p => counts[p.id]));
+    $('#countStats').innerHTML =
+      '<div><div class="v">' + g.plays.length + '</div><div class="l">Plays</div></div>' +
+      '<div><div class="v">' + ros.length + '</div><div class="l">Players</div></div>' +
+      '<div><div class="v" style="color:' + (below ? 'var(--red)' : 'var(--green)') + '">' + below + '</div><div class="l">Below ' + S.minPlays + '</div></div>';
+    list.innerHTML = sorted.map(p => {
+      const c = counts[p.id], need = S.minPlays - c;
+      return '<div class="crow ' + level(c) + '">' +
+        '<span class="pn">' + esc(numStr(p)) + '</span>' +
+        '<span class="pname">' + esc(p.name) + '</span>' +
+        '<span class="bar"><i style="width:' + Math.min(100, c / max * 100) + '%"></i></span>' +
+        '<span class="pc">' + c + (need > 0 ? '<span class="need">needs ' + need + '</span>' : '') + '</span>' +
+        '</div>';
+    }).join('') || '<div class="empty">No active players.</div>';
+  }
+
+  function renderRoster() {
+    const list = $('#rosterList');
+    const ros = sortRoster(S.roster);
+    $('#rosterCount').textContent = ros.length ? '(' + ros.filter(p => p.active).length + ' active of ' + ros.length + ')' : '';
+    if (!ros.length) { list.innerHTML = '<div class="empty">No players yet.</div>'; return; }
+    list.innerHTML = '';
+    ros.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'rrow' + (p.active ? '' : ' absent');
+      row.innerHTML =
+        '<input class="n" type="number" inputmode="numeric" value="' + esc(numStr(p)) + '" placeholder="#">' +
+        '<input class="grow nm" value="' + esc(p.name) + '" placeholder="Name">' +
+        '<button class="btn small toggle">' + (p.active ? 'In' : 'Out') + '</button>' +
+        '<button class="btn small danger del">✕</button>';
+      row.querySelector('.n').onchange = (e) => { p.num = e.target.value === '' ? '' : Number(e.target.value); save(); render(); };
+      row.querySelector('.nm').onchange = (e) => { p.name = e.target.value.trim() || p.name; save(); render(); };
+      row.querySelector('.toggle').onclick = () => { p.active = !p.active; if (!p.active) S.lineup = S.lineup.filter(i => i !== p.id); save(); render(); };
+      row.querySelector('.del').onclick = () => ask('Remove ' + p.name + ' from the roster? Their plays in past games are kept.', () => {
+        S.roster = S.roster.filter(x => x.id !== p.id); S.lineup = S.lineup.filter(i => i !== p.id); save(); render();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function renderGames() {
+    $('#teamName').value = S.team; $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
+    const list = $('#gamesList');
+    list.innerHTML = '';
+    if (!S.games.length) list.innerHTML = '<div class="empty">No games yet.</div>';
+    S.games.slice().reverse().forEach(g => {
+      const row = document.createElement('div');
+      row.className = 'rrow';
+      const live = g.id === S.currentGameId;
+      row.innerHTML = '<span class="grow"><b>vs ' + esc(g.opponent || 'TBD') + '</b><br><span class="muted small">' + esc(g.date) + ' · ' + g.plays.length + ' plays</span></span>' +
+        (live ? '<span class="tag live">LIVE</span>' : '<button class="btn small open">Open</button>') +
+        '<button class="btn small danger del">✕</button>';
+      const open = row.querySelector('.open');
+      if (open) open.onclick = () => { S.currentGameId = g.id; S.lineup = g.plays.length ? g.plays[g.plays.length - 1].slice() : []; save(); render(); showView('game'); };
+      row.querySelector('.del').onclick = () => ask('Delete the game vs ' + (g.opponent || 'TBD') + ' (' + g.plays.length + ' plays)?', () => {
+        S.games = S.games.filter(x => x.id !== g.id); if (S.currentGameId === g.id) S.currentGameId = null; save(); render();
+      });
+      list.appendChild(row);
+    });
+
+    const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
+    S.games.forEach(g => { const c = countsFor(g); Object.keys(c).forEach(id => { if (tot[id] && c[id] > 0) { tot[id].plays += c[id]; tot[id].games++; } }); });
+    $('#seasonList').innerHTML = sortRoster(S.roster).map(p =>
+      '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
+      '<span class="muted small">' + tot[p.id].games + ' gm</span><span class="pc">' + tot[p.id].plays + '</span></div>'
+    ).join('') || '<div class="empty">No players yet.</div>';
+  }
+
+  // ---------- actions ----------
+  function lineupIds() { return S.lineup.filter(id => player(id) && player(id).active); }
+  function toggle(id) {
+    const i = S.lineup.indexOf(id);
+    if (i >= 0) S.lineup.splice(i, 1); else S.lineup.push(id);
+    save(); renderHeader(); renderGame();
+  }
+  function recordPlay() {
+    const g = curGame(); if (!g) return;
+    const ids = lineupIds();
+    if (!ids.length) return;
+    g.plays.push(ids);
+    save(); render();
+    if (navigator.vibrate) navigator.vibrate(30);
+    toast('Play ' + g.plays.length + ' recorded');
+  }
+  function undo() {
+    const g = curGame(); if (!g || !g.plays.length) return;
+    S.lineup = g.plays.pop().slice();
+    save(); render(); toast('Undid last play');
+  }
+  function startGame(opp) {
+    const g = { id: uid(), opponent: (opp || '').trim(), date: new Date().toISOString().slice(0, 10), plays: [] };
+    S.games.push(g); S.currentGameId = g.id; S.lineup = []; save(); render();
+  }
+  function addPlayer(numValue, name) {
+    name = (name || '').trim(); if (!name) return false;
+    const n = (numValue === '' || numValue == null) ? '' : Number(numValue);
+    S.roster.push({ id: uid(), num: n, name: name, active: true });
+    return true;
+  }
+
+  // ---------- share / export ----------
+  function summaryText() {
+    const g = lastGame(); if (!g) return '';
+    const c = countsFor(g);
+    const ros = activeRoster().slice().sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
+    const lines = [S.team + ' Team vs ' + (g.opponent || 'TBD') + ' (' + g.date + ') - ' + g.plays.length + ' plays'];
+    ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < S.minPlays ? ' (needs ' + (S.minPlays - c[p.id]) + ')' : '')));
+    return lines.join('\n');
+  }
+  function csvText() {
+    const g = lastGame(); if (!g) return '';
+    const c = countsFor(g);
+    const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+    const rows = [['Number', 'Name', 'Plays', 'Active', 'Opponent', 'Date'].join(',')];
+    sortRoster(S.roster).forEach(p => rows.push([numStr(p), q(p.name), c[p.id], p.active ? 'yes' : 'no', q(g.opponent || ''), g.date].join(',')));
+    return rows.join('\n');
+  }
+  function download(name, text, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: type })); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---------- ui helpers ----------
+  function numStr(p) { return (p.num === '' || p.num == null) ? '' : String(p.num); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
+  let toastT;
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1200); }
+  function ask(msg, yes) {
+    const d = $('#confirmDlg'); $('#confirmMsg').textContent = msg;
+    $('#confirmYes').onclick = () => { d.close(); yes(); };
+    $('#confirmNo').onclick = () => d.close();
+    d.showModal();
+  }
+  function showView(name) {
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+    $('main').scrollTop = 0;
+  }
+
+  // ---------- wiring ----------
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => showView(b.dataset.view));
+  $('#startGameBtn').onclick = () => startGame($('#oppInput').value);
+  $('#oppInput').onkeydown = (e) => { if (e.key === 'Enter') startGame(e.target.value); };
+  $('#recordBtn').onclick = recordPlay;
+  $('#undoBtn').onclick = undo;
+  $('#clearSelBtn').onclick = () => { S.lineup = []; save(); renderGame(); };
+  $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); save(); renderHeader(); renderGames(); } };
+  $('#endGameBtn').onclick = () => ask('End this game? You can reopen it from the Games tab.', () => { S.currentGameId = null; S.lineup = []; save(); render(); });
+
+  $('#addForm').onsubmit = (e) => {
+    e.preventDefault();
+    if (addPlayer($('#addNum').value, $('#addName').value)) { $('#addNum').value = ''; $('#addName').value = ''; save(); render(); $('#addNum').focus(); }
+  };
+  $('#bulkBtn').onclick = () => {
+    let added = 0;
+    $('#bulkInput').value.split(/[\n,;]+/).forEach(line => {
+      line = line.trim(); if (!line) return;
+      const m = line.match(/^#?(\d{1,2})\s*[-:.]?\s*(.+)$/);
+      if (m ? addPlayer(m[1], m[2]) : addPlayer('', line)) added++;
+    });
+    if (added) { $('#bulkInput').value = ''; save(); render(); toast('Added ' + added + ' player' + (added === 1 ? '' : 's')); }
+  };
+
+  $('#teamName').onchange = (e) => { S.team = e.target.value.trim() || 'White'; save(); render(); };
+  $('#minPlays').onchange = (e) => { S.minPlays = Math.max(0, Number(e.target.value) || 0); save(); render(); };
+  $('#fieldSize').onchange = (e) => { S.fieldSize = Math.max(1, Number(e.target.value) || 11); save(); render(); };
+
+  $('#copyBtn').onclick = async () => {
+    const t = summaryText(); if (!t) return toast('No game yet');
+    try { await navigator.clipboard.writeText(t); toast('Copied'); } catch (err) { window.prompt('Copy this:', t); }
+  };
+  $('#shareBtn').onclick = async () => {
+    const t = summaryText(); if (!t) return toast('No game yet');
+    if (navigator.share) { try { await navigator.share({ title: S.team + ' play counts', text: t }); } catch (err) { /* cancelled */ } }
+    else $('#copyBtn').click();
+  };
+  $('#csvBtn').onclick = () => { const t = csvText(); if (!t) return toast('No game yet'); download(S.team + '-playcount-' + lastGame().date + '.csv', t, 'text/csv'); };
+
+  $('#exportBtn').onclick = () => download(S.team + '-playcount-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(S, null, 2), 'application/json');
+  $('#importBtn').onclick = () => $('#importFile').click();
+  $('#importFile').onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try { const d = JSON.parse(r.result); if (!Array.isArray(d.roster) || !Array.isArray(d.games)) throw new Error('bad'); S = Object.assign(defaults(), d); save(); render(); toast('Restored'); }
+      catch (err) { toast('Not a valid backup'); }
+      e.target.value = '';
+    };
+    r.readAsText(f);
+  };
+  $('#resetBtn').onclick = () => ask('Delete the roster and every game on this device?', () => { S = defaults(); save(); render(); });
+
+  window.addEventListener('storage', (e) => { if (e.key === KEY) { S = load(); render(); } });
+
+  render();
+})();
+</script>
+</body>
+</html>
