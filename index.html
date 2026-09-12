@@ -57,6 +57,15 @@
   .seg button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 8px; font-size: 14px; font-weight: 600; }
   .seg button.active { background: var(--panel2); color: var(--text); }
 
+  /* Unit chips */
+  .units { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; -webkit-overflow-scrolling: touch; }
+  .ubtn { flex: none; background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 999px; padding: 8px 16px; min-height: 44px; font-weight: 700; white-space: nowrap; }
+  .ubtn.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .ubtn .c { font-weight: 400; font-size: 12px; opacity: .65; margin-left: 4px; }
+  .ubtn.add { border-style: dashed; font-weight: 400; color: var(--muted); }
+  .ulist .rrow b { font-size: 16px; }
+
   /* Player grid (game view) */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
   .chip { position: relative; background: var(--panel2); border: 2px solid var(--line); border-radius: 12px;
@@ -153,6 +162,7 @@
         <button data-mode="tap">Tap: press each player</button>
       </div>
       <p class="muted small hint" id="modeHint"></p>
+      <div class="units" id="unitRow"></div>
       <div class="grid" id="playerGrid"></div>
       <div class="sticky-actions">
         <div id="lineupActions">
@@ -248,6 +258,12 @@
       <div id="rosterList"></div>
       <div class="row" style="margin-top:10px" id="loadTeamRow"><button class="btn small" id="loadTeamBtn">Load team roster</button><span class="muted small">Re-adds anyone from your team link who is missing.</span></div>
     </div>
+    <div class="card">
+      <h2>Units <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
+      <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
+      <div id="unitList" class="ulist"></div>
+      <button class="btn small" id="newUnitBtn" style="margin-top:10px">New unit</button>
+    </div>
   </section>
 
   <!-- SETTINGS VIEW -->
@@ -292,6 +308,20 @@
     <button class="btn danger grow" id="confirmYes">Yes</button>
   </div>
 </dialog>
+<dialog id="unitDlg">
+  <h2 style="margin:0 0 10px;font-size:16px" id="unitDlgTitle">New unit</h2>
+  <input id="unitName" placeholder="Unit name (e.g. Hawk)" autocomplete="off">
+  <div class="row" style="margin:10px 0 4px">
+    <button class="btn small" id="unitFromLineup">Use who is on the field</button>
+    <button class="btn small" id="unitNone">Clear</button>
+    <span class="muted small grow" style="text-align:right" id="unitCount"></span>
+  </div>
+  <div id="unitMembers" style="max-height:45vh;overflow-y:auto"></div>
+  <div class="row" style="margin-top:12px">
+    <button class="btn grow" id="unitCancel">Cancel</button>
+    <button class="btn primary grow" id="unitSave">Save unit</button>
+  </div>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -327,6 +357,7 @@
     team: 'White', minPlays: 12, fieldSize: 11, mode: 'lineup',
     template: [],        // names from the personal link, used by the Load roster button
     roster: [],          // {id, num, name}
+    units: [],           // {id, name, members:[playerId]} e.g. Hawk, Viper
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
     selectedEventId: null,
@@ -398,7 +429,7 @@
   }
 
   // ---------- rendering ----------
-  function render() { renderHeader(); renderGame(); renderCounts(); renderAttend(); renderRoster(); renderSettings(); }
+  function render() { renderHeader(); renderGame(); renderCounts(); renderAttend(); renderRoster(); renderUnitList(); renderSettings(); }
 
   function renderHeader() {
     const g = curGame();
@@ -430,9 +461,11 @@
     document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode));
     $('#modeHint').innerHTML = tap
       ? 'Each press on a player counts one play for them. Undo takes back the last press.'
-      : 'Tap the players on the field, then hit <b>Record Play</b>. The lineup stays selected, so after that you only tap the kids who sub in or out.';
+      : 'Tap the players on the field, then hit <b>Record Play</b>. The lineup stays selected, so after that you only tap the kids who sub in or out.'
+        + (S.units.length ? ' A unit button loads that whole group, and you can still sub after.' : '');
     $('#lineupActions').style.display = tap ? 'none' : '';
     $('#clearSelBtn').style.display = tap ? 'none' : '';
+    renderUnitRow(g, tap);
 
     const counts = countsFor(g);
     const grid = $('#playerGrid'); grid.innerHTML = '';
@@ -476,6 +509,75 @@
     log.innerHTML = g.plays.map((pl, i) =>
       '<div><b>#' + (i + 1) + '</b> · ' + pl.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(', ') + '</div>'
     ).reverse().join('');
+  }
+
+  function renderUnitRow(g, tap) {
+    const row = $('#unitRow');
+    // Units are optional. Nothing shows here until you build one on the Roster tab.
+    const show = !tap && S.units.length > 0;
+    row.style.display = show ? '' : 'none';
+    if (!show) return;
+    row.innerHTML = '';
+    const cur = S.lineup.slice().sort().join(',');
+    S.units.forEach(u => {
+      const avail = u.members.filter(id => g.present.includes(id));
+      const b = document.createElement('button');
+      b.className = 'ubtn' + (avail.length && avail.slice().sort().join(',') === cur ? ' on' : '');
+      b.innerHTML = esc(u.name) + '<span class="c">' + avail.length + (avail.length < u.members.length ? ' of ' + u.members.length : '') + '</span>';
+      b.onclick = () => loadUnit(u.id);
+      row.appendChild(b);
+    });
+    const add = document.createElement('button');
+    add.className = 'ubtn add';
+    add.textContent = '+ Unit';
+    add.onclick = () => openUnitEditor(null, lineupIds());
+    row.appendChild(add);
+  }
+
+  function renderUnitList() {
+    const list = $('#unitList');
+    if (!S.units.length) { list.innerHTML = '<div class="empty">No units yet. Build one here, or tap the players on the field and use the + button on the Game tab.</div>'; return; }
+    list.innerHTML = '';
+    S.units.forEach(u => {
+      const row = document.createElement('div'); row.className = 'rrow';
+      const who = u.members.map(id => player(id)).filter(Boolean);
+      row.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span><br><span class="muted small">' +
+        (who.length ? esc(who.map(p => numStr(p) || p.name.split(/\s+/)[0]).join(', ')) : 'nobody yet') + '</span></span>' +
+        '<button class="btn small edit">Edit</button><button class="btn small danger del">✕</button>';
+      row.querySelector('.edit').onclick = () => openUnitEditor(u.id, null);
+      row.querySelector('.del').onclick = () => ask('Delete the ' + u.name + ' unit? Play counts are not affected.', () => {
+        S.units = S.units.filter(x => x.id !== u.id); save(); render();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  let draft = null;
+  function openUnitEditor(id, preset) {
+    const u = id ? S.units.find(x => x.id === id) : null;
+    draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice() };
+    $('#unitDlgTitle').textContent = u ? 'Edit unit' : 'New unit';
+    $('#unitName').value = draft.name;
+    $('#unitFromLineup').style.display = curGame() ? '' : 'none';
+    renderUnitDraft();
+    $('#unitDlg').showModal();
+  }
+  function renderUnitDraft() {
+    if (!draft) return;
+    $('#unitCount').textContent = draft.members.length + ' selected';
+    const box = $('#unitMembers'); box.innerHTML = '';
+    if (!S.roster.length) { box.innerHTML = '<div class="empty">Add players on the Roster tab first.</div>'; return; }
+    sortRoster(S.roster).forEach(p => {
+      const inU = draft.members.includes(p.id);
+      const r = document.createElement('div');
+      r.className = 'arow' + (inU ? ' here' : '');
+      r.innerHTML = '<span class="chk">' + (inU ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>';
+      r.onclick = () => {
+        if (inU) draft.members = draft.members.filter(i => i !== p.id); else draft.members.push(p.id);
+        renderUnitDraft();
+      };
+      box.appendChild(r);
+    });
   }
 
   function renderCounts() {
@@ -574,6 +676,7 @@
       row.querySelector('.del').onclick = () => ask('Remove ' + p.name + ' from the roster? Their past plays and attendance are dropped from the reports.', () => {
         S.roster = S.roster.filter(x => x.id !== p.id); S.lineup = S.lineup.filter(i => i !== p.id);
         S.events.forEach(e => e.present = e.present.filter(i => i !== p.id));
+        S.units.forEach(u => u.members = u.members.filter(i => i !== p.id));
         save(); render();
       });
       list.appendChild(row);
@@ -629,6 +732,15 @@
     S.roster.push(p);
     S.events.forEach(e => { if (e.date >= today()) e.present.push(p.id); });
     return true;
+  }
+  function loadUnit(id) {
+    const u = S.units.find(x => x.id === id), g = curGame();
+    if (!u || !g) return;
+    S.lineup = u.members.filter(pid => g.present.includes(pid));
+    save(); renderHeader(); renderGame();
+    if (navigator.vibrate) navigator.vibrate(20);
+    const out = u.members.length - S.lineup.length;
+    toast(u.name + ': ' + S.lineup.length + ' on field' + (out ? ', ' + out + ' absent' : ''));
   }
   function loadTeamRoster() {
     const have = new Set(S.roster.map(p => p.name.toLowerCase()));
@@ -714,6 +826,18 @@
     if (added) { $('#bulkInput').value = ''; save(); render(); toast('Added ' + added + ' player' + (added === 1 ? '' : 's')); }
   };
   $('#loadTeamBtn').onclick = loadTeamRoster;
+  $('#newUnitBtn').onclick = () => openUnitEditor(null, lineupIds());
+  $('#unitFromLineup').onclick = () => { if (draft) { draft.members = lineupIds().slice(); renderUnitDraft(); } };
+  $('#unitNone').onclick = () => { if (draft) { draft.members = []; renderUnitDraft(); } };
+  $('#unitCancel').onclick = () => { $('#unitDlg').close(); draft = null; };
+  $('#unitSave').onclick = () => {
+    if (!draft) return;
+    const name = $('#unitName').value.trim();
+    if (!name) { $('#unitName').focus(); return toast('Give the unit a name'); }
+    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); }
+    else S.units.push({ id: uid(), name: name, members: draft.members.slice() });
+    $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
+  };
 
   $('#teamName').onchange = (e) => { S.team = e.target.value.trim() || 'White'; save(); render(); };
   $('#minPlays').onchange = (e) => { S.minPlays = Math.max(0, Number(e.target.value) || 0); save(); render(); };

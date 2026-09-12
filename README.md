@@ -10,9 +10,11 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
    - **Lineup: one button per play.** Tap the kids on the field once, then just press the big **Record Play** button every snap. Tap a kid to sub them in or out. The lineup carries over between plays.
    - **Tap: press each player.** Each press on a player's button adds one play for them. Good when only a few kids need watching.
    Undo takes back the last play or press in either mode. The date and opponent can be edited at the bottom.
+   If you have built any units, a row of unit buttons appears above the players. One tap puts that whole unit on the field, and you can still tap individuals to sub after. Absent kids are skipped. The row stays hidden until you create your first unit, so manual tapping is unaffected.
 2. **Counts.** Sorted fewest plays first, with red and amber flags and a "needs N" label for anyone under the minimum. Share sends the summary as a text, including who was absent; Download CSV gives a spreadsheet.
 3. **Attendance.** Add practices and games with a date. Tap a row on the schedule, then tap players to mark them here or not. Everyone starts as present. Absent players drop off the field grid and the minimum-play check for that game. Season attendance shows games and practices attended per player.
-4. **Roster.** The 25 White players from the league sheet are preloaded. Add jersey numbers in the # box when you have them. New players can be added one at a time or pasted like `12 Jack, 7 Owen, 22 Liam`. **Load White roster** re-adds anyone who was deleted.
+4. **Roster.** Add jersey numbers in the # box when you have them. Players can be added one at a time or pasted like `12 Jack, 7 Owen, 22 Liam`. **Load team roster** re-adds anyone from your team link who was deleted.
+   This tab also holds **Units**, the named groups you send out together such as Hawk or Viper. Build one with New unit and check off players, or during a game tap the group on the field and use "Use who is on the field" to capture it in one go. Units are optional and carry over between games.
 5. **Settings.** Team name, minimum plays per game, and players on field. Season play totals. Backup and Restore move the data between phones.
 
 ## Putting it on a phone
