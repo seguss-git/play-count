@@ -964,7 +964,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       let out = null;
       try { out = JSON.parse(txt); } catch (err) { /* not json */ }
       if (out && out.ok === false) return { ok: false, msg: out.error || 'the script reported an error' };
-      if (out && out.ok) return { ok: true, msg: 'matched ' + out.matched + (out.missed && out.missed.length ? ', missed ' + out.missed.length : '') + ', column ' + out.column };
+      if (out && out.ok) {
+        const bits = [];
+        if (out.sheet) bits.push('tab "' + out.sheet + '"');
+        if (typeof out.players === 'number') bits.push(out.players + ' players found');
+        if (out.matched) bits.push('marked ' + out.matched + ' in column ' + out.column);
+        if (out.missed && out.missed.length) bits.push('no match for ' + out.missed.join(', '));
+        return { ok: true, msg: bits.length ? bits.join(' · ') : 'sent' };
+      }
       return { ok: true, msg: 'sent' };
     } catch (err) {
       try {
