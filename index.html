@@ -448,7 +448,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.2';
+  const APP_VERSION = '2026.09.12.3';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -626,10 +626,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        const st = Object.assign(defaults(), JSON.parse(raw));
+        const saved = JSON.parse(raw);
+        const st = Object.assign(defaults(), saved);
         if (st.team !== 'White' && st.team !== 'Blue') st.team = 'White';
         if (st.rosterTeam !== 'White' && st.rosterTeam !== 'Blue') st.rosterTeam = st.team;
-        if (st.minRule !== 14) { st.minPlays = 14; st.minRule = 14; }   // league rule, applied once to older installs
+        if (saved.minRule !== 14) { st.minPlays = 14; st.minRule = 14; }   // league rule, applied once to older installs
         return st;
       }
       const old = localStorage.getItem(OLD_KEY);
