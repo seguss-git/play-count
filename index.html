@@ -134,6 +134,7 @@
   .chip.tap.ok .big { color: var(--green); } .chip.tap.mid .big { color: var(--amber); } .chip.tap.low .big { color: var(--red); }
   .chip.tap.low::after, .chip.tap.mid::after { display: none; }
 
+  body.focus #modeSeg, body.focus #modeHint, body.focus #gameArea .card { display: none !important; }
   .sticky-actions { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 30%); padding: 12px 0 4px; }
   .record { width: 100%; font-size: 22px; min-height: 64px; }
   .onfield { font-size: 14px; color: var(--muted); text-align: center; margin-bottom: 8px; }
@@ -220,11 +221,13 @@
       <div class="sticky-actions">
         <div id="lineupActions">
           <div class="onfield" id="onFieldInfo"></div>
+        <div class="muted small" id="needLine" style="text-align:center;margin:-4px 0 8px"></div>
           <button class="btn primary record" id="recordBtn">Record Play</button>
         </div>
         <div class="row" style="margin-top:8px">
           <button class="btn grow" id="undoBtn">Undo Last</button>
           <button class="btn grow" id="clearSelBtn">Clear Lineup</button>
+          <button class="btn" id="focusBtn" title="Hide everything but the field">Focus</button>
         </div>
       </div>
       <div class="card">
@@ -236,6 +239,7 @@
         <div class="row wrap">
           <input id="dateEdit" type="date">
           <input id="oppEdit" placeholder="Opponent" class="grow">
+          <button class="btn" id="halfBtn">Halftime</button>
           <button class="btn" id="endGameBtn">Close</button>
         </div>
         <p class="muted small" style="margin:8px 0 0">Closing keeps everything. Reopen any game from the list on this tab or from Attendance.</p>
@@ -363,6 +367,7 @@
         <button class="btn danger grow" id="resetBtn">Reset Everything</button>
       </div>
       <p class="muted small">Everything is saved on this device only. Use Backup to move it to another phone.</p>
+      <p class="muted small" id="verLine"></p>
     </div>
     <div class="card">
       <h2>Google Sheet</h2>
@@ -437,11 +442,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     <button class="btn danger grow" id="subOff">Take off, no swap</button>
   </div>
 </dialog>
+<div id="updateBar" style="display:none;position:fixed;left:0;right:0;top:0;z-index:20;background:var(--accent);color:var(--accent-text);padding:12px 16px;font-weight:700;text-align:center;cursor:pointer;padding-top:calc(12px + env(safe-area-inset-top))">New version ready. Tap to update.</div>
 <div class="toast" id="toast"></div>
 
 <script>
 (function () {
   'use strict';
+  const APP_VERSION = '2026.09.12.1';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -605,6 +612,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     units: [],           // {id, name, members:[playerId], pos:{playerId:'QB'}} e.g. Hawk, Viper
     activeUnitId: null,  // unit last sent out, used to label positions on the field
     fieldView: false,    // show the formation diagram instead of the list
+    focus: false,        // hide everything on the Game tab except the field and the button
     impMode: 'chart',    // import dialog: 'chart' or 'roster'
     subSort: 'chart',    // how the substitute list is ordered
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
@@ -776,17 +784,28 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const info = $('#onFieldInfo');
     info.innerHTML = '<b>' + n + '</b> on field' + (S.fieldSize ? ' <span class="muted">/ ' + S.fieldSize + '</span>' : '');
     info.classList.toggle('over', !!S.fieldSize && n > S.fieldSize);
+    document.body.classList.toggle('focus', !!S.focus);
+    $('#focusBtn').textContent = S.focus ? 'Show all' : 'Focus';
+    const offField = presentRoster(g).filter(p => S.lineup.indexOf(p.id) < 0)
+      .sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b)).slice(0, 3);
+    const under = presentRoster(g).filter(p => counts[p.id] < S.minPlays).length;
+    $('#needLine').innerHTML = g.plays.length && offField.length
+      ? '<span style="color:var(--amber)">Next in:</span> ' + esc(offField.map(p => lastName(p) + ' ' + counts[p.id]).join(' · ')) +
+        (under ? ' <span style="color:var(--red)">· ' + under + ' under ' + S.minPlays + '</span>' : '')
+      : '';
     $('#recordBtn').disabled = n === 0;
     $('#recordBtn').textContent = 'Record Play ' + (g.plays.length + 1);
     $('#undoBtn').disabled = g.plays.length === 0;
     if (document.activeElement !== $('#oppEdit')) $('#oppEdit').value = g.opponent || '';
     $('#dateEdit').value = g.date;
+    $('#halfBtn').textContent = typeof g.half === 'number' ? 'Undo halftime' : 'Halftime';
 
     const log = $('#playLog');
     if (!g.plays.length) { log.innerHTML = '<div class="muted">No plays yet.</div>'; return; }
     log.innerHTML = g.plays.map((pl, i) =>
+      (typeof g.half === 'number' && g.half === i ? '<div style="color:var(--accent);font-weight:700;text-align:center">— Halftime —</div>' : '') +
       '<div><b>#' + (i + 1) + '</b> · ' + pl.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(', ') + '</div>'
-    ).reverse().join('');
+    ).reverse().join('') + (typeof g.half === 'number' && g.half === g.plays.length ? '<div style="color:var(--accent);font-weight:700;text-align:center">— Halftime —</div>' : '');
   }
 
 
@@ -1292,12 +1311,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       '<div><div class="v">' + g.plays.length + '</div><div class="l">' + (S.mode === 'tap' ? 'Taps' : 'Plays') + '</div></div>' +
       '<div><div class="v">' + ros.length + '</div><div class="l">Present</div></div>' +
       '<div><div class="v" style="color:' + (below ? 'var(--red)' : 'var(--green)') + '">' + below + '</div><div class="l">Below ' + S.minPlays + '</div></div>';
+    const h1 = {};
+    if (typeof g.half === 'number') g.plays.slice(0, g.half).forEach(pl => pl.forEach(id => { h1[id] = (h1[id] || 0) + 1; }));
     list.innerHTML = sorted.map(p => {
       const c = counts[p.id], need = S.minPlays - c;
+      const halves = typeof g.half === 'number' ? '<span class="need" style="color:var(--muted)">H1 ' + (h1[p.id] || 0) + ' · H2 ' + (c - (h1[p.id] || 0)) + '</span>' : '';
       return '<div class="crow ' + level(c) + '">' +
         '<span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
         '<span class="bar"><i style="width:' + Math.min(100, c / max * 100) + '%"></i></span>' +
-        '<span class="pc">' + c + (need > 0 ? '<span class="need">needs ' + need + '</span>' : '') + '</span></div>';
+        '<span class="pc">' + c + (need > 0 ? '<span class="need">needs ' + need + '</span>' : '') + halves + '</span></div>';
     }).join('') || '<div class="empty">Nobody marked present.</div>';
   }
 
@@ -1410,6 +1432,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function renderSettings() {
     document.querySelectorAll('#teamSeg button').forEach(b => b.classList.toggle('active', b.dataset.team === S.team));
     $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
+    $('#verLine').textContent = 'Version ' + APP_VERSION + (navigator.onLine ? '' : ' · offline');
     if (document.activeElement !== $('#sheetUrl')) $('#sheetUrl').value = S.sheetUrl || '';
     $('#pushBtn').style.display = S.sheetUrl ? '' : 'none';
     const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
@@ -1580,7 +1603,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 
   // ---------- wiring ----------
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => showView(b.dataset.view));
-  document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; save(); render(); });
+  document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => {
+    const g = curGame();
+    if (g && g.plays.length && b.dataset.mode !== S.mode) { toast('Undo the plays first, or start a new game, to change how you count'); return; }
+    S.mode = b.dataset.mode; save(); render();
+  });
   $('#startGameBtn').onclick = () => { const g = addEvent('game', $('#newDate').value, $('#oppInput').value); $('#oppInput').value = ''; openGame(g.id); };
   $('#oppInput').onkeydown = (e) => { if (e.key === 'Enter') $('#startGameBtn').click(); };
   $('#recordBtn').onclick = recordPlay;
@@ -1588,6 +1615,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#clearSelBtn').onclick = () => { S.lineup = []; S.activeUnitId = null; save(); renderGame(); };
   $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); save(); render(); } };
   $('#dateEdit').onchange = (e) => { const g = curGame(); if (g && e.target.value) { g.date = e.target.value; save(); render(); } };
+  $('#halfBtn').onclick = () => {
+    const g = curGame(); if (!g) return;
+    if (typeof g.half === 'number') { delete g.half; toast('Halftime marker removed'); }
+    else { g.half = g.plays.length; toast('Halftime after play ' + g.half); }
+    save(); render();
+  };
   $('#endGameBtn').onclick = () => { S.currentGameId = null; S.lineup = []; save(); render(); };
 
   $('#evType').onchange = () => renderAttend();
@@ -1605,6 +1638,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#subCancel').onclick = () => $('#subDlg').close();
   $('#subOff').onclick = () => { const id = subOutId; $('#subDlg').close(); if (id) toggle(id); };
   $('#fieldToggle').onclick = () => { S.fieldView = !S.fieldView; save(); renderGame(); };
+  $('#focusBtn').onclick = () => { S.focus = !S.focus; save(); renderGame(); };
   $('#pushBtn').onclick = pushAttendance;
   $('#sheetUrl').onchange = (e) => { S.sheetUrl = e.target.value.trim(); save(); render(); };
   $('#sheetTestBtn').onclick = async () => {
@@ -1696,6 +1730,42 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 
   seedDefaults();
   applyLink();
+  // ---------- offline + updates ----------
+  // The service worker caches the app so it opens with no signal. The page is always
+  // fetched network-first, so a connection means the newest version. While the app is
+  // open we also check every few minutes and whenever the network comes back.
+  let updateReady = false;
+  function applyUpdate() { location.reload(); }
+  function offerUpdate() {
+    updateReady = true;
+    if (!curGame() && !document.querySelector('dialog[open]')) { applyUpdate(); return; }
+    $('#updateBar').style.display = '';
+  }
+  async function checkForUpdate() {
+    if (!navigator.onLine || !/^https?:/.test(location.protocol)) return;
+    try {
+      const r = await fetch('index.html?u=' + Date.now(), { cache: 'no-store' });
+      const t = await r.text();
+      const m = t.match(/APP_VERSION = '([^']+)'/);
+      if (m && m[1] !== APP_VERSION) offerUpdate();
+    } catch (e) { /* offline or blocked, try again later */ }
+  }
+  if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) offerUpdate();
+        });
+      });
+      setInterval(() => { reg.update().catch(() => {}); checkForUpdate(); }, 5 * 60 * 1000);
+    }).catch(() => {});
+    window.addEventListener('online', checkForUpdate);
+    setTimeout(checkForUpdate, 8000);
+  }
+  $('#updateBar').onclick = applyUpdate;
+
   window.addEventListener('storage', (e) => { if (e.key === KEY) { S = load(); render(); } });
 
   render();

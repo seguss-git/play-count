@@ -11,7 +11,7 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
 1. **Game.** Pick a date and opponent and start, or open a game already on the schedule. Two ways to count:
    - **Lineup: one button per play.** Tap the kids on the field once, then just press the big **Record Play** button every snap. Tap a kid to sub them in or out. The lineup carries over between plays.
    - **Tap: press each player.** Each press on a player's button adds one play for them. Good when only a few kids need watching.
-   Undo takes back the last play or press in either mode. The date and opponent can be edited at the bottom.
+   Undo takes back the last play or press in either mode. The counting mode locks once a game has plays, so the two never mix inside one game. **Focus** hides everything except the players and the Record button. Under the on-field count, **Next in** names the three present players with the fewest plays who are not on the field, and how many are still under the minimum. The date and opponent can be edited at the bottom, and **Halftime** drops a marker into the play log so the Counts tab can show each player's plays per half.
    In **Field view**, tapping a player opens a substitution sheet for his spot: who plays there on another unit, who plays the mirror side, who fits athletically, and how many plays each has had. Sort by chart, by fit, or by who needs plays, then tap a name to swap him in.
    **Field view** swaps the player list for a formation diagram on a green field, with each player at their position. Tap a spot to sub that player out; the bench runs along the bottom. The formation comes from your imported chart: one row per table on the sheet, left to right in the order the columns were pasted. Toggle back with List view.
    If you have built any units, a row of unit buttons appears above the players. One tap puts that whole unit on the field, and you can still tap individuals to sub after. Absent kids are skipped. The row stays hidden until you create your first unit, so manual tapping is unaffected.
@@ -26,6 +26,12 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
    In **Unit chart** mode it takes a whole depth chart at once. Paste the rows straight from your spreadsheet, or scan a printed sheet with the camera and correct anything the scan misreads. The first row holds the positions and each following row is one unit. A sheet that stacks several tables (line, linebackers, safety) can be pasted in one go and merges into the same units. Names are matched against the roster by last name, and anything it cannot match is listed in red before you commit.
 5. **Settings.** **My team** is a White or Blue switch that decides which team the game side belongs to. Games, play counts, units and the Counts tab all follow it, and each game and unit remembers the team that created it, so the two never mix. Practice attendance always covers both teams. That means either coach can use the same app and simply flip the switch. Also holds minimum plays per game and players on field. Season play totals. Backup and Restore move the data between phones.
    **Google Sheet.** Paste the web app link from `apps-script.gs` deployed on your attendance spreadsheet, then use Send a test row to check it. After that, Send to Sheet on the Attendance tab writes that session straight into your grid, finding or creating a column for the date and marking each player. Setup instructions are in the comments at the top of `apps-script.gs`.
+
+## Offline and updates
+
+The app installs a service worker on first visit, so it opens with no signal and keeps working. The page itself is always fetched network-first with a four second timeout, so anyone with a connection gets the newest version on their next open, and anyone without one gets the copy from last time. While open, it checks for a new version every five minutes and whenever the network comes back. If nothing is in progress it reloads on its own; during a game it shows a bar at the top to tap when you are ready. The version number is at the bottom of Settings.
+
+When shipping a change, bump `APP_VERSION` in index.html and `VERSION` in sw.js so old caches are cleared.
 
 ## Putting it on a phone
 
