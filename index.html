@@ -448,7 +448,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.1';
+  const APP_VERSION = '2026.09.12.2';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -603,7 +603,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 
   // ---------- state ----------
   const defaults = () => ({
-    team: 'White', minPlays: 12, fieldSize: 11, mode: 'lineup',
+    team: 'White', minPlays: 14, minRule: 14, fieldSize: 11, mode: 'lineup',  // DJFL minimum is 14 plays a game
     template: [],        // White names from the personal link
     templateB: [],       // Blue names from the personal link
     rosterTeam: 'White', // which team the Roster tab is showing
@@ -629,6 +629,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         const st = Object.assign(defaults(), JSON.parse(raw));
         if (st.team !== 'White' && st.team !== 'Blue') st.team = 'White';
         if (st.rosterTeam !== 'White' && st.rosterTeam !== 'Blue') st.rosterTeam = st.team;
+        if (st.minRule !== 14) { st.minPlays = 14; st.minRule = 14; }   // league rule, applied once to older installs
         return st;
       }
       const old = localStorage.getItem(OLD_KEY);
