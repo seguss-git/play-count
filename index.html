@@ -12,7 +12,6 @@
     --bg: #0f172a; --panel: #1e293b; --panel2: #273449; --line: #334155;
     --text: #f1f5f9; --muted: #94a3b8; --accent: #f8fafc; --accent-text: #0f172a;
     --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
-    --tap: 56px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -20,12 +19,11 @@
     touch-action: manipulation; overscroll-behavior: none; }
   body { display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
   header { padding: 12px 16px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-  header h1 { margin: 0; font-size: 20px; letter-spacing: .02em; }
+  header h1 { margin: 0; font-size: 20px; }
   header .sub { color: var(--muted); font-size: 14px; }
   main { flex: 1; overflow-y: auto; padding: 0 12px 16px; }
-  nav { display: flex; border-top: 1px solid var(--line); background: var(--panel);
-    padding-bottom: env(safe-area-inset-bottom); }
-  nav button { flex: 1; background: none; border: 0; color: var(--muted); font-size: 13px; padding: 10px 0 8px;
+  nav { display: flex; border-top: 1px solid var(--line); background: var(--panel); padding-bottom: env(safe-area-inset-bottom); }
+  nav button { flex: 1; background: none; border: 0; color: var(--muted); font-size: 12px; padding: 10px 0 8px;
     display: flex; flex-direction: column; align-items: center; gap: 2px; }
   nav button .ic { font-size: 20px; }
   nav button.active { color: var(--accent); }
@@ -40,26 +38,33 @@
   .btn:disabled { opacity: .4; cursor: default; }
   .row { display: flex; gap: 8px; align-items: center; }
   .row.wrap { flex-wrap: wrap; }
-  .grow { flex: 1; }
+  .grow { flex: 1; min-width: 0; }
   .card { background: var(--panel); border-radius: 14px; padding: 12px; margin: 10px 0; }
   .card h2 { margin: 0 0 8px; font-size: 15px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
   .card h2 .plain { text-transform: none; font-weight: 400; }
   input, select { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line);
     border-radius: 10px; padding: 10px 12px; font-size: 16px; min-height: 44px; width: 100%; }
   input[type=number] { width: 90px; }
+  input[type=date] { width: auto; min-width: 150px; }
   label.field { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
   .muted { color: var(--muted); } .small { font-size: 13px; }
   .hint { margin: 8px 4px; }
   .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
   code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 
+  /* Segmented control */
+  .seg { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; margin: 8px 0; }
+  .seg button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  .seg button.active { background: var(--panel2); color: var(--text); }
+
   /* Player grid (game view) */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
   .chip { position: relative; background: var(--panel2); border: 2px solid var(--line); border-radius: 12px;
-    min-height: 72px; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    color: var(--text); user-select: none; }
-  .chip .num { font-size: 22px; font-weight: 800; line-height: 1; }
-  .chip .num.txt { font-size: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    min-height: 74px; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text); user-select: none; transition: transform .08s; }
+  .chip:active { transform: scale(.94); }
+  .chip .big { font-size: 22px; font-weight: 800; line-height: 1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .big.txt { font-size: 16px; }
   .chip .name { font-size: 12px; margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip .cnt { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--muted); font-weight: 600; }
   .chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -67,14 +72,19 @@
   .chip.low::after, .chip.mid::after { content: ""; position: absolute; left: 6px; top: 6px; width: 8px; height: 8px; border-radius: 50%; }
   .chip.low::after { background: var(--red); }
   .chip.mid::after { background: var(--amber); }
+  .chip.tap { min-height: 84px; }
+  .chip.tap .big { font-size: 30px; }
+  .chip.tap .name { font-size: 13px; margin-top: 6px; }
+  .chip.tap.ok .big { color: var(--green); } .chip.tap.mid .big { color: var(--amber); } .chip.tap.low .big { color: var(--red); }
+  .chip.tap.low::after, .chip.tap.mid::after { display: none; }
 
   .sticky-actions { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 30%); padding: 12px 0 4px; }
-  .record { width: 100%; font-size: 20px; min-height: var(--tap); }
+  .record { width: 100%; font-size: 22px; min-height: 64px; }
   .onfield { font-size: 14px; color: var(--muted); text-align: center; margin-bottom: 8px; }
   .onfield b { color: var(--text); font-size: 18px; }
   .onfield.over b { color: var(--red); }
 
-  /* Counts */
+  /* Count rows */
   .crow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .crow:last-child { border-bottom: 0; }
   .crow .pn { width: 34px; font-weight: 800; text-align: right; }
@@ -88,14 +98,20 @@
   .stat div { flex: 1; background: var(--panel2); border-radius: 10px; padding: 8px; text-align: center; }
   .stat .v { font-size: 22px; font-weight: 800; } .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; }
 
-  /* Roster and games */
+  /* Roster, schedule, attendance rows */
   .rrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
   .rrow:last-child { border-bottom: 0; }
   .rrow input.n { width: 64px; text-align: center; }
-  .rrow.absent { opacity: .5; }
-  .toggle { min-width: 60px; }
-  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--panel2); color: var(--muted); }
+  .rrow.sel { background: var(--panel2); margin: 0 -8px; padding: 6px 8px; border-radius: 8px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--panel2); color: var(--muted); white-space: nowrap; }
   .tag.live { background: var(--green); color: #052e16; font-weight: 700; }
+  .tag.game { background: #1d4ed8; color: #fff; }
+  .arow { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; min-height: 48px; }
+  .arow:last-child { border-bottom: 0; }
+  .arow .chk { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none; }
+  .arow.here .chk { background: var(--green); border-color: var(--green); color: #052e16; font-weight: 800; }
+  .arow.here { color: var(--text); } .arow:not(.here) { color: var(--muted); }
+  .arow .pn { width: 30px; text-align: right; font-weight: 800; }
 
   /* Log, dialogs, toast */
   .log { font-size: 13px; color: var(--muted); max-height: 160px; overflow-y: auto; }
@@ -116,20 +132,33 @@
 <main>
   <!-- GAME VIEW -->
   <section class="view active" id="view-game">
-    <div id="noGame" class="card" style="display:none">
-      <h2>No game in progress</h2>
-      <div class="row">
-        <input id="oppInput" placeholder="Opponent (e.g. Blue)" class="grow">
-        <button class="btn primary" id="startGameBtn">Start Game</button>
+    <div id="noGame" style="display:none">
+      <div class="card">
+        <h2>New game</h2>
+        <div class="row wrap">
+          <input id="newDate" type="date">
+          <input id="oppInput" placeholder="Opponent (e.g. Blue)" class="grow">
+          <button class="btn primary" id="startGameBtn">Start</button>
+        </div>
+        <p class="muted small" style="margin:8px 0 0">Everyone on the roster is marked present to start. Fix absences on the Attendance tab.</p>
       </div>
-      <p class="muted small">Add players on the Roster tab first, then start a game.</p>
+      <div class="card">
+        <h2>Or open a game</h2>
+        <div id="pickGameList"></div>
+      </div>
     </div>
     <div id="gameArea" style="display:none">
-      <p class="muted small hint">Tap players to put them on the field, then hit <b>Record Play</b>. The lineup stays selected between plays. Tap a player again to sub them out.</p>
+      <div class="seg" id="modeSeg">
+        <button data-mode="lineup">Lineup: one button per play</button>
+        <button data-mode="tap">Tap: press each player</button>
+      </div>
+      <p class="muted small hint" id="modeHint"></p>
       <div class="grid" id="playerGrid"></div>
       <div class="sticky-actions">
-        <div class="onfield" id="onFieldInfo"></div>
-        <button class="btn primary record" id="recordBtn">Record Play</button>
+        <div id="lineupActions">
+          <div class="onfield" id="onFieldInfo"></div>
+          <button class="btn primary record" id="recordBtn">Record Play</button>
+        </div>
         <div class="row" style="margin-top:8px">
           <button class="btn grow" id="undoBtn">Undo Last</button>
           <button class="btn grow" id="clearSelBtn">Clear Lineup</button>
@@ -142,20 +171,20 @@
       <div class="card">
         <h2>Game</h2>
         <div class="row wrap">
+          <input id="dateEdit" type="date">
           <input id="oppEdit" placeholder="Opponent" class="grow">
-          <button class="btn" id="endGameBtn">End Game</button>
+          <button class="btn" id="endGameBtn">Close</button>
         </div>
+        <p class="muted small" style="margin:8px 0 0">Closing keeps everything. Reopen any game from the list on this tab or from Attendance.</p>
       </div>
     </div>
   </section>
 
   <!-- COUNTS VIEW -->
   <section class="view" id="view-counts">
+    <div class="card"><div class="stat" id="countStats"></div></div>
     <div class="card">
-      <div class="stat" id="countStats"></div>
-    </div>
-    <div class="card">
-      <h2>Plays per player <span class="muted plain">(fewest first)</span></h2>
+      <h2 id="countTitle">Plays per player <span class="muted plain">(fewest first)</span></h2>
       <div id="countList"></div>
     </div>
     <div class="card">
@@ -168,6 +197,36 @@
     </div>
   </section>
 
+  <!-- ATTENDANCE VIEW -->
+  <section class="view" id="view-attend">
+    <div class="card">
+      <h2>Add practice or game</h2>
+      <div class="row wrap">
+        <select id="evType" style="width:auto"><option value="practice">Practice</option><option value="game">Game</option></select>
+        <input id="evDate" type="date">
+        <input id="evOpp" placeholder="Opponent" class="grow" style="display:none">
+        <button class="btn primary" id="evAddBtn">Add</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Schedule <span class="muted plain">(tap one to take attendance)</span></h2>
+      <div id="eventList"></div>
+    </div>
+    <div class="card" id="attendCard" style="display:none">
+      <h2 id="attendTitle">Attendance</h2>
+      <div class="row" style="margin-bottom:6px">
+        <button class="btn small" id="allHereBtn">Everyone here</button>
+        <button class="btn small" id="noneHereBtn">Clear</button>
+        <span class="muted small grow" style="text-align:right" id="attendCount"></span>
+      </div>
+      <div id="attendList"></div>
+    </div>
+    <div class="card">
+      <h2>Season attendance</h2>
+      <div id="attendSeason"></div>
+    </div>
+  </section>
+
   <!-- ROSTER VIEW -->
   <section class="view" id="view-roster">
     <div class="card">
@@ -177,7 +236,7 @@
         <input id="addName" placeholder="Name" class="grow" autocomplete="off">
         <button class="btn primary" type="submit">Add</button>
       </form>
-      <p class="muted small" style="margin:8px 0 0">Or paste a whole roster separated by commas, like <code>12 Jack, 7 Owen, 22 Liam</code>:</p>
+      <p class="muted small" style="margin:8px 0 0">Or paste several separated by commas, like <code>12 Jack, 7 Owen, 22 Liam</code>:</p>
       <div class="row" style="margin-top:6px">
         <input id="bulkInput" placeholder="12 Jack, 7 Owen, 22 Liam ..." class="grow">
         <button class="btn" id="bulkBtn">Import</button>
@@ -185,14 +244,14 @@
     </div>
     <div class="card">
       <h2>Roster <span class="muted plain" id="rosterCount"></span></h2>
-      <p class="muted small" style="margin:0 0 6px">Mark a player <b>Out</b> if they are absent or hurt so they do not show on the field grid or count against the minimum. Add jersey numbers in the # box when you have them.</p>
+      <p class="muted small" style="margin:0 0 6px">Add jersey numbers in the # box when you have them. Absences are handled per game on the Attendance tab.</p>
       <div id="rosterList"></div>
-      <div class="row" style="margin-top:10px"><button class="btn small" id="loadWhiteBtn">Load White roster</button><span class="muted small">Adds any of the 25 league-sheet players who are missing.</span></div>
+      <div class="row" style="margin-top:10px"><button class="btn small" id="loadWhiteBtn">Load White roster</button><span class="muted small">Re-adds any of the 25 league-sheet players who are missing.</span></div>
     </div>
   </section>
 
-  <!-- GAMES / SETTINGS VIEW -->
-  <section class="view" id="view-games">
+  <!-- SETTINGS VIEW -->
+  <section class="view" id="view-settings">
     <div class="card">
       <h2>Settings</h2>
       <div class="row wrap">
@@ -202,11 +261,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>Games</h2>
-      <div id="gamesList"></div>
-    </div>
-    <div class="card">
-      <h2>Season totals</h2>
+      <h2>Season play totals</h2>
       <div id="seasonList"></div>
     </div>
     <div class="card">
@@ -225,8 +280,9 @@
 <nav>
   <button data-view="game" class="active"><span class="ic">🏈</span>Game</button>
   <button data-view="counts"><span class="ic">📊</span>Counts</button>
+  <button data-view="attend"><span class="ic">✅</span>Attendance</button>
   <button data-view="roster"><span class="ic">👥</span>Roster</button>
-  <button data-view="games"><span class="ic">📅</span>Games</button>
+  <button data-view="settings"><span class="ic">⚙️</span>Settings</button>
 </nav>
 
 <dialog id="confirmDlg">
@@ -241,66 +297,91 @@
 <script>
 (function () {
   'use strict';
-  const KEY = 'playcount.v1';
+  const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
 
-  // ---------- state ----------
-  const defaults = () => ({
-    team: 'White', minPlays: 12, fieldSize: 11,
-    roster: [],          // {id, num, name, active}
-    games: [],           // {id, opponent, date, plays: [[playerId,...]]}
-    currentGameId: null,
-    lineup: []           // sticky on-field selection
-  });
   // 2026 White team roster (from the league sheet). Numbers can be added on the Roster tab.
   const WHITE_ROSTER = ['John Bongiorno', 'Fox Boyle', 'Jackson Chernichaw', 'Coleman Croswell', 'Tristan Derrico',
     'Ellis Drohojowski', 'Henry Farnum', 'KJ Kumar', 'Charlie Leuffer', 'Andrew Love', 'Connor McAnany', 'Henry McNulty',
     'Cal Mohamed', 'Will Murphy', 'George Pewarski', 'Tyler Pezley', 'Mac Rand', 'Cyrus Roberto', 'Kai Seguss',
     'Charles Sokolik', 'Brady Stever', 'Ben Thistle', 'Harrison Trotta', 'Thomas Turowski', 'Henry Wood'];
+
+  // ---------- state ----------
+  const defaults = () => ({
+    team: 'White', minPlays: 12, fieldSize: 11, mode: 'lineup',
+    roster: [],          // {id, num, name}
+    events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
+    currentGameId: null,
+    selectedEventId: null,
+    lineup: []           // sticky on-field selection (lineup mode)
+  });
   let S = load();
 
   function load() {
-    try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(defaults(), JSON.parse(raw)); }
-    catch (e) { console.warn('load failed', e); }
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) return Object.assign(defaults(), JSON.parse(raw));
+      const old = localStorage.getItem(OLD_KEY);
+      if (old) return migrate(JSON.parse(old));
+    } catch (e) { console.warn('load failed', e); }
     const s = defaults();
-    WHITE_ROSTER.forEach(n => s.roster.push({ id: uid(), num: '', name: n, active: true }));
+    WHITE_ROSTER.forEach(n => s.roster.push({ id: uid(), num: '', name: n }));
     return s;
   }
-  function loadWhiteRoster() {
-    const have = new Set(S.roster.map(p => p.name.toLowerCase()));
-    let added = 0;
-    WHITE_ROSTER.forEach(n => { if (!have.has(n.toLowerCase())) { S.roster.push({ id: uid(), num: '', name: n, active: true }); added++; } });
-    save(); render(); toast(added ? 'Added ' + added + ' player' + (added === 1 ? '' : 's') : 'Roster already loaded');
+  function migrate(o) {
+    const s = defaults();
+    s.team = o.team || s.team; s.minPlays = o.minPlays ?? s.minPlays; s.fieldSize = o.fieldSize || s.fieldSize;
+    s.roster = (o.roster || []).map(p => ({ id: p.id, num: p.num ?? '', name: p.name }));
+    const activeIds = (o.roster || []).filter(p => p.active !== false).map(p => p.id);
+    s.events = (o.games || []).map(g => ({ id: g.id, type: 'game', date: g.date, opponent: g.opponent || '', present: activeIds.slice(), plays: g.plays || [] }));
+    s.currentGameId = o.currentGameId || null; s.lineup = o.lineup || [];
+    return s;
   }
   function save() { localStorage.setItem(KEY, JSON.stringify(S)); }
 
-  const curGame = () => S.games.find(g => g.id === S.currentGameId) || null;
-  const lastGame = () => curGame() || S.games[S.games.length - 1] || null;
+  const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  const ev = (id) => S.events.find(e => e.id === id) || null;
+  const curGame = () => ev(S.currentGameId);
+  const games = () => S.events.filter(e => e.type === 'game').sort(byDate);
+  const lastGame = () => curGame() || games().slice(-1)[0] || null;
   const player = (id) => S.roster.find(p => p.id === id);
-  const activeRoster = () => S.roster.filter(p => p.active);
   const num = (p) => (p.num === '' || p.num == null) ? 999 : Number(p.num);
   const sortRoster = (arr) => arr.slice().sort((a, b) => (num(a) - num(b)) || a.name.localeCompare(b.name));
+  const presentRoster = (e) => sortRoster(S.roster.filter(p => e.present.includes(p.id)));
 
-  function countsFor(game) {
+  function countsFor(e) {
     const c = {};
     S.roster.forEach(p => c[p.id] = 0);
-    if (game) game.plays.forEach(pl => pl.forEach(id => { if (id in c) c[id]++; }));
+    if (e) e.plays.forEach(pl => pl.forEach(id => { if (id in c) c[id]++; }));
     return c;
   }
   function level(count) {
     if (!S.minPlays || count >= S.minPlays) return 'ok';
     return count >= S.minPlays * 0.5 ? 'mid' : 'low';
   }
+  function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function fmtDate(s) {
+    if (!s) return '';
+    const [y, m, d] = s.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getDay()] + ' ' + m + '/' + d;
+  }
+  function evLabel(e) { return e.type === 'game' ? 'vs ' + (e.opponent || 'TBD') : 'Practice'; }
+  function addEvent(type, date, opponent) {
+    const e = { id: uid(), type: type, date: date || today(), opponent: (opponent || '').trim(), present: S.roster.map(p => p.id), plays: [] };
+    S.events.push(e);
+    return e;
+  }
 
   // ---------- rendering ----------
-  function render() { renderHeader(); renderGame(); renderCounts(); renderRoster(); renderGames(); }
+  function render() { renderHeader(); renderGame(); renderCounts(); renderAttend(); renderRoster(); renderSettings(); }
 
   function renderHeader() {
     const g = curGame();
     $('#hdrTitle').textContent = S.team + ' Team';
-    $('#hdrSub').textContent = g ? 'vs ' + (g.opponent || 'TBD') + ' · ' + g.date : 'Play Count';
-    $('#hdrRight').textContent = g ? 'Play ' + g.plays.length : '';
+    $('#hdrSub').textContent = g ? evLabel(g) + ' · ' + fmtDate(g.date) : 'Play Count';
+    $('#hdrRight').textContent = g ? (S.mode === 'tap' ? g.plays.length + ' taps' : 'Play ' + g.plays.length) : '';
     document.title = S.team + ' Team Play Count';
   }
 
@@ -308,20 +389,49 @@
     const g = curGame();
     $('#noGame').style.display = g ? 'none' : '';
     $('#gameArea').style.display = g ? '' : 'none';
-    if (!g) return;
+    if (!g) {
+      if (!$('#newDate').value) $('#newDate').value = today();
+      const list = $('#pickGameList'); list.innerHTML = '';
+      const gs = games().reverse();
+      if (!gs.length) list.innerHTML = '<div class="empty">No games on the schedule yet.</div>';
+      gs.forEach(e => {
+        const row = document.createElement('div'); row.className = 'rrow';
+        row.innerHTML = '<span class="grow"><b>' + esc(evLabel(e)) + '</b><br><span class="muted small">' + fmtDate(e.date) + ' · ' + e.plays.length + ' plays · ' + e.present.length + ' present</span></span>' +
+          '<button class="btn small open">Count plays</button>';
+        row.querySelector('.open').onclick = () => openGame(e.id);
+        list.appendChild(row);
+      });
+      return;
+    }
+    const tap = S.mode === 'tap';
+    document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode));
+    $('#modeHint').innerHTML = tap
+      ? 'Each press on a player counts one play for them. Undo takes back the last press.'
+      : 'Tap the players on the field, then hit <b>Record Play</b>. The lineup stays selected, so after that you only tap the kids who sub in or out.';
+    $('#lineupActions').style.display = tap ? 'none' : '';
+    $('#clearSelBtn').style.display = tap ? 'none' : '';
+
     const counts = countsFor(g);
-    const grid = $('#playerGrid');
-    grid.innerHTML = '';
-    const ros = sortRoster(activeRoster());
-    if (!ros.length) grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No active players. Add some on the Roster tab.</div>';
+    const grid = $('#playerGrid'); grid.innerHTML = '';
+    const ros = presentRoster(g);
+    if (!ros.length) {
+      grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Nobody is marked present for this game.<br><br><button class="btn small" id="allPresentBtn">Mark everyone present</button></div>';
+      $('#allPresentBtn').onclick = () => { g.present = S.roster.map(p => p.id); save(); render(); };
+    }
     ros.forEach(p => {
-      const on = S.lineup.includes(p.id);
-      const b = document.createElement('button');
-      b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
       const n = numStr(p), parts = p.name.trim().split(/\s+/);
-      const big = n || parts[0], small = n ? p.name : parts.slice(1).join(' ');
-      b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="num' + (n ? '' : ' txt') + '">' + esc(big) + '</span><span class="name">' + esc(small) + '</span>';
-      b.onclick = () => toggle(p.id);
+      const b = document.createElement('button');
+      if (tap) {
+        b.className = 'chip tap ' + level(counts[p.id]);
+        b.innerHTML = '<span class="big">' + counts[p.id] + '</span><span class="name">' + esc((n ? '#' + n + ' ' : '') + p.name) + '</span>';
+        b.onclick = () => tapPlay(p.id);
+      } else {
+        const on = S.lineup.includes(p.id);
+        const big = n || parts[0], small = n ? p.name : parts.slice(1).join(' ');
+        b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
+        b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="big' + (n ? '' : ' txt') + '">' + esc(big) + '</span><span class="name">' + esc(small) + '</span>';
+        b.onclick = () => toggle(p.id);
+      }
       grid.appendChild(b);
     });
     const n = lineupIds().length;
@@ -332,11 +442,12 @@
     $('#recordBtn').textContent = 'Record Play ' + (g.plays.length + 1);
     $('#undoBtn').disabled = g.plays.length === 0;
     if (document.activeElement !== $('#oppEdit')) $('#oppEdit').value = g.opponent || '';
+    $('#dateEdit').value = g.date;
 
     const log = $('#playLog');
     if (!g.plays.length) { log.innerHTML = '<div class="muted">No plays yet.</div>'; return; }
     log.innerHTML = g.plays.map((pl, i) =>
-      '<div><b>#' + (i + 1) + '</b> · ' + pl.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(' ') + '</div>'
+      '<div><b>#' + (i + 1) + '</b> · ' + pl.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(', ') + '</div>'
     ).reverse().join('');
   }
 
@@ -344,72 +455,107 @@
     const g = lastGame();
     const list = $('#countList');
     if (!g) { list.innerHTML = '<div class="empty">No game yet. Start one on the Game tab.</div>'; $('#countStats').innerHTML = ''; return; }
+    $('#countTitle').innerHTML = esc(evLabel(g)) + ' · ' + fmtDate(g.date) + ' <span class="muted plain">(fewest first)</span>';
     const counts = countsFor(g);
-    const ros = activeRoster();
+    const ros = presentRoster(g);
     const sorted = ros.slice().sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b));
     const below = sorted.filter(p => counts[p.id] < S.minPlays).length;
     const max = Math.max(S.minPlays, 1, ...sorted.map(p => counts[p.id]));
     $('#countStats').innerHTML =
-      '<div><div class="v">' + g.plays.length + '</div><div class="l">Plays</div></div>' +
-      '<div><div class="v">' + ros.length + '</div><div class="l">Players</div></div>' +
+      '<div><div class="v">' + g.plays.length + '</div><div class="l">' + (S.mode === 'tap' ? 'Taps' : 'Plays') + '</div></div>' +
+      '<div><div class="v">' + ros.length + '</div><div class="l">Present</div></div>' +
       '<div><div class="v" style="color:' + (below ? 'var(--red)' : 'var(--green)') + '">' + below + '</div><div class="l">Below ' + S.minPlays + '</div></div>';
     list.innerHTML = sorted.map(p => {
       const c = counts[p.id], need = S.minPlays - c;
       return '<div class="crow ' + level(c) + '">' +
-        '<span class="pn">' + esc(numStr(p)) + '</span>' +
-        '<span class="pname">' + esc(p.name) + '</span>' +
+        '<span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
         '<span class="bar"><i style="width:' + Math.min(100, c / max * 100) + '%"></i></span>' +
-        '<span class="pc">' + c + (need > 0 ? '<span class="need">needs ' + need + '</span>' : '') + '</span>' +
-        '</div>';
-    }).join('') || '<div class="empty">No active players.</div>';
+        '<span class="pc">' + c + (need > 0 ? '<span class="need">needs ' + need + '</span>' : '') + '</span></div>';
+    }).join('') || '<div class="empty">Nobody marked present.</div>';
+  }
+
+  function renderAttend() {
+    if (!$('#evDate').value) $('#evDate').value = today();
+    $('#evOpp').style.display = $('#evType').value === 'game' ? '' : 'none';
+    const list = $('#eventList'); list.innerHTML = '';
+    const evs = S.events.slice().sort(byDate).reverse();
+    if (!evs.length) list.innerHTML = '<div class="empty">Nothing scheduled yet. Add a practice or game above.</div>';
+    if (S.selectedEventId && !ev(S.selectedEventId)) S.selectedEventId = null;
+    evs.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'rrow' + (e.id === S.selectedEventId ? ' sel' : '');
+      row.innerHTML = '<span class="grow" style="cursor:pointer"><b>' + fmtDate(e.date) + '</b> <span class="tag ' + e.type + '">' + esc(evLabel(e)) + '</span>' +
+        '<br><span class="muted small">' + e.present.length + ' of ' + S.roster.length + ' here' + (e.type === 'game' ? ' · ' + e.plays.length + ' plays' : '') + '</span></span>' +
+        (e.type === 'game' ? (e.id === S.currentGameId ? '<span class="tag live">LIVE</span>' : '<button class="btn small open">Count</button>') : '') +
+        '<button class="btn small danger del">✕</button>';
+      row.querySelector('.grow').onclick = () => { S.selectedEventId = e.id; save(); renderAttend(); };
+      const open = row.querySelector('.open'); if (open) open.onclick = () => openGame(e.id);
+      row.querySelector('.del').onclick = () => ask('Delete ' + evLabel(e) + ' on ' + fmtDate(e.date) + (e.plays.length ? ' and its ' + e.plays.length + ' plays' : '') + '?', () => {
+        S.events = S.events.filter(x => x.id !== e.id);
+        if (S.currentGameId === e.id) S.currentGameId = null;
+        if (S.selectedEventId === e.id) S.selectedEventId = null;
+        save(); render();
+      });
+      list.appendChild(row);
+    });
+
+    const sel = ev(S.selectedEventId);
+    $('#attendCard').style.display = sel ? '' : 'none';
+    if (sel) {
+      $('#attendTitle').innerHTML = 'Attendance · ' + fmtDate(sel.date) + ' <span class="plain">' + esc(evLabel(sel)) + '</span>';
+      $('#attendCount').textContent = sel.present.length + ' of ' + S.roster.length + ' here';
+      const al = $('#attendList'); al.innerHTML = '';
+      sortRoster(S.roster).forEach(p => {
+        const here = sel.present.includes(p.id);
+        const row = document.createElement('div');
+        row.className = 'arow' + (here ? ' here' : '');
+        row.innerHTML = '<span class="chk">' + (here ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>';
+        row.onclick = () => {
+          if (here) sel.present = sel.present.filter(i => i !== p.id); else sel.present.push(p.id);
+          if (here && sel.id === S.currentGameId) S.lineup = S.lineup.filter(i => i !== p.id);
+          save(); render();
+        };
+        al.appendChild(row);
+      });
+    }
+
+    const gs = S.events.filter(e => e.type === 'game'), ps = S.events.filter(e => e.type === 'practice');
+    $('#attendSeason').innerHTML = sortRoster(S.roster).map(p => {
+      const ga = gs.filter(e => e.present.includes(p.id)).length, pa = ps.filter(e => e.present.includes(p.id)).length;
+      const tot = gs.length + ps.length, att = ga + pa, pct = tot ? Math.round(att / tot * 100) : 0;
+      return '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
+        '<span class="muted small">G ' + ga + '/' + gs.length + ' · P ' + pa + '/' + ps.length + '</span>' +
+        '<span class="pc" style="color:' + (pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)') + '">' + pct + '%</span></div>';
+    }).join('') || '<div class="empty">No players yet.</div>';
   }
 
   function renderRoster() {
     const list = $('#rosterList');
     const ros = sortRoster(S.roster);
-    $('#rosterCount').textContent = ros.length ? '(' + ros.filter(p => p.active).length + ' active of ' + ros.length + ')' : '';
+    $('#rosterCount').textContent = ros.length ? '(' + ros.length + ')' : '';
     if (!ros.length) { list.innerHTML = '<div class="empty">No players yet.</div>'; return; }
     list.innerHTML = '';
     ros.forEach(p => {
-      const row = document.createElement('div');
-      row.className = 'rrow' + (p.active ? '' : ' absent');
+      const row = document.createElement('div'); row.className = 'rrow';
       row.innerHTML =
         '<input class="n" type="number" inputmode="numeric" value="' + esc(numStr(p)) + '" placeholder="#">' +
         '<input class="grow nm" value="' + esc(p.name) + '" placeholder="Name">' +
-        '<button class="btn small toggle">' + (p.active ? 'In' : 'Out') + '</button>' +
         '<button class="btn small danger del">✕</button>';
       row.querySelector('.n').onchange = (e) => { p.num = e.target.value === '' ? '' : Number(e.target.value); save(); render(); };
       row.querySelector('.nm').onchange = (e) => { p.name = e.target.value.trim() || p.name; save(); render(); };
-      row.querySelector('.toggle').onclick = () => { p.active = !p.active; if (!p.active) S.lineup = S.lineup.filter(i => i !== p.id); save(); render(); };
-      row.querySelector('.del').onclick = () => ask('Remove ' + p.name + ' from the roster? Their plays in past games are kept.', () => {
-        S.roster = S.roster.filter(x => x.id !== p.id); S.lineup = S.lineup.filter(i => i !== p.id); save(); render();
+      row.querySelector('.del').onclick = () => ask('Remove ' + p.name + ' from the roster? Their past plays and attendance are dropped from the reports.', () => {
+        S.roster = S.roster.filter(x => x.id !== p.id); S.lineup = S.lineup.filter(i => i !== p.id);
+        S.events.forEach(e => e.present = e.present.filter(i => i !== p.id));
+        save(); render();
       });
       list.appendChild(row);
     });
   }
 
-  function renderGames() {
+  function renderSettings() {
     $('#teamName').value = S.team; $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
-    const list = $('#gamesList');
-    list.innerHTML = '';
-    if (!S.games.length) list.innerHTML = '<div class="empty">No games yet.</div>';
-    S.games.slice().reverse().forEach(g => {
-      const row = document.createElement('div');
-      row.className = 'rrow';
-      const live = g.id === S.currentGameId;
-      row.innerHTML = '<span class="grow"><b>vs ' + esc(g.opponent || 'TBD') + '</b><br><span class="muted small">' + esc(g.date) + ' · ' + g.plays.length + ' plays</span></span>' +
-        (live ? '<span class="tag live">LIVE</span>' : '<button class="btn small open">Open</button>') +
-        '<button class="btn small danger del">✕</button>';
-      const open = row.querySelector('.open');
-      if (open) open.onclick = () => { S.currentGameId = g.id; S.lineup = g.plays.length ? g.plays[g.plays.length - 1].slice() : []; save(); render(); showView('game'); };
-      row.querySelector('.del').onclick = () => ask('Delete the game vs ' + (g.opponent || 'TBD') + ' (' + g.plays.length + ' plays)?', () => {
-        S.games = S.games.filter(x => x.id !== g.id); if (S.currentGameId === g.id) S.currentGameId = null; save(); render();
-      });
-      list.appendChild(row);
-    });
-
     const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
-    S.games.forEach(g => { const c = countsFor(g); Object.keys(c).forEach(id => { if (tot[id] && c[id] > 0) { tot[id].plays += c[id]; tot[id].games++; } }); });
+    games().forEach(g => { const c = countsFor(g); Object.keys(c).forEach(id => { if (tot[id] && c[id] > 0) { tot[id].plays += c[id]; tot[id].games++; } }); });
     $('#seasonList').innerHTML = sortRoster(S.roster).map(p =>
       '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
       '<span class="muted small">' + tot[p.id].games + ' gm</span><span class="pc">' + tot[p.id].plays + '</span></div>'
@@ -417,7 +563,7 @@
   }
 
   // ---------- actions ----------
-  function lineupIds() { return S.lineup.filter(id => player(id) && player(id).active); }
+  function lineupIds() { const g = curGame(); return g ? S.lineup.filter(id => player(id) && g.present.includes(id)) : []; }
   function toggle(id) {
     const i = S.lineup.indexOf(id);
     if (i >= 0) S.lineup.splice(i, 1); else S.lineup.push(id);
@@ -425,44 +571,61 @@
   }
   function recordPlay() {
     const g = curGame(); if (!g) return;
-    const ids = lineupIds();
-    if (!ids.length) return;
+    const ids = lineupIds(); if (!ids.length) return;
     g.plays.push(ids);
     save(); render();
     if (navigator.vibrate) navigator.vibrate(30);
     toast('Play ' + g.plays.length + ' recorded');
   }
+  function tapPlay(id) {
+    const g = curGame(); if (!g) return;
+    g.plays.push([id]);
+    save(); renderHeader(); renderGame(); renderCounts(); renderSettings();
+    if (navigator.vibrate) navigator.vibrate(20);
+  }
   function undo() {
     const g = curGame(); if (!g || !g.plays.length) return;
-    S.lineup = g.plays.pop().slice();
-    save(); render(); toast('Undid last play');
+    const last = g.plays.pop();
+    if (S.mode === 'lineup') S.lineup = last.slice();
+    save(); render(); toast(S.mode === 'tap' ? 'Undid ' + (player(last[0]) ? player(last[0]).name : 'last tap') : 'Undid last play');
   }
-  function startGame(opp) {
-    const g = { id: uid(), opponent: (opp || '').trim(), date: new Date().toISOString().slice(0, 10), plays: [] };
-    S.games.push(g); S.currentGameId = g.id; S.lineup = []; save(); render();
+  function openGame(id) {
+    const g = ev(id); if (!g) return;
+    S.currentGameId = id; S.selectedEventId = id;
+    S.lineup = g.plays.length && S.mode === 'lineup' ? g.plays[g.plays.length - 1].slice() : [];
+    save(); render(); showView('game');
   }
   function addPlayer(numValue, name) {
     name = (name || '').trim(); if (!name) return false;
-    const n = (numValue === '' || numValue == null) ? '' : Number(numValue);
-    S.roster.push({ id: uid(), num: n, name: name, active: true });
+    const p = { id: uid(), num: (numValue === '' || numValue == null) ? '' : Number(numValue), name: name };
+    S.roster.push(p);
+    S.events.forEach(e => { if (e.date >= today()) e.present.push(p.id); });
     return true;
+  }
+  function loadWhiteRoster() {
+    const have = new Set(S.roster.map(p => p.name.toLowerCase()));
+    let added = 0;
+    WHITE_ROSTER.forEach(n => { if (!have.has(n.toLowerCase())) { addPlayer('', n); added++; } });
+    save(); render(); toast(added ? 'Added ' + added + ' player' + (added === 1 ? '' : 's') : 'Roster already loaded');
   }
 
   // ---------- share / export ----------
   function summaryText() {
     const g = lastGame(); if (!g) return '';
     const c = countsFor(g);
-    const ros = activeRoster().slice().sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
-    const lines = [S.team + ' Team vs ' + (g.opponent || 'TBD') + ' (' + g.date + ') - ' + g.plays.length + ' plays'];
+    const ros = presentRoster(g).sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
+    const lines = [S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
     ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < S.minPlays ? ' (needs ' + (S.minPlays - c[p.id]) + ')' : '')));
+    const absent = S.roster.filter(p => !g.present.includes(p.id));
+    if (absent.length) lines.push('Absent: ' + sortRoster(absent).map(p => p.name).join(', '));
     return lines.join('\n');
   }
   function csvText() {
     const g = lastGame(); if (!g) return '';
     const c = countsFor(g);
     const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
-    const rows = [['Number', 'Name', 'Plays', 'Active', 'Opponent', 'Date'].join(',')];
-    sortRoster(S.roster).forEach(p => rows.push([numStr(p), q(p.name), c[p.id], p.active ? 'yes' : 'no', q(g.opponent || ''), g.date].join(',')));
+    const rows = [['Number', 'Name', 'Plays', 'Present', 'Opponent', 'Date'].join(',')];
+    sortRoster(S.roster).forEach(p => rows.push([numStr(p), q(p.name), c[p.id], g.present.includes(p.id) ? 'yes' : 'no', q(g.opponent || ''), g.date].join(',')));
     return rows.join('\n');
   }
   function download(name, text, type) {
@@ -490,13 +653,24 @@
 
   // ---------- wiring ----------
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => showView(b.dataset.view));
-  $('#startGameBtn').onclick = () => startGame($('#oppInput').value);
-  $('#oppInput').onkeydown = (e) => { if (e.key === 'Enter') startGame(e.target.value); };
+  document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; save(); render(); });
+  $('#startGameBtn').onclick = () => { const g = addEvent('game', $('#newDate').value, $('#oppInput').value); $('#oppInput').value = ''; openGame(g.id); };
+  $('#oppInput').onkeydown = (e) => { if (e.key === 'Enter') $('#startGameBtn').click(); };
   $('#recordBtn').onclick = recordPlay;
   $('#undoBtn').onclick = undo;
   $('#clearSelBtn').onclick = () => { S.lineup = []; save(); renderGame(); };
-  $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); save(); renderHeader(); renderGames(); } };
-  $('#endGameBtn').onclick = () => ask('End this game? You can reopen it from the Games tab.', () => { S.currentGameId = null; S.lineup = []; save(); render(); });
+  $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); save(); render(); } };
+  $('#dateEdit').onchange = (e) => { const g = curGame(); if (g && e.target.value) { g.date = e.target.value; save(); render(); } };
+  $('#endGameBtn').onclick = () => { S.currentGameId = null; S.lineup = []; save(); render(); };
+
+  $('#evType').onchange = () => renderAttend();
+  $('#evAddBtn').onclick = () => {
+    const e = addEvent($('#evType').value, $('#evDate').value, $('#evOpp').value);
+    S.selectedEventId = e.id; $('#evOpp').value = ''; save(); render();
+    toast((e.type === 'game' ? 'Game' : 'Practice') + ' added for ' + fmtDate(e.date));
+  };
+  $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = S.roster.map(p => p.id); save(); render(); } };
+  $('#noneHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = []; if (e.id === S.currentGameId) S.lineup = []; save(); render(); } };
 
   $('#addForm').onsubmit = (e) => {
     e.preventDefault();
@@ -511,6 +685,7 @@
     });
     if (added) { $('#bulkInput').value = ''; save(); render(); toast('Added ' + added + ' player' + (added === 1 ? '' : 's')); }
   };
+  $('#loadWhiteBtn').onclick = loadWhiteRoster;
 
   $('#teamName').onchange = (e) => { S.team = e.target.value.trim() || 'White'; save(); render(); };
   $('#minPlays').onchange = (e) => { S.minPlays = Math.max(0, Number(e.target.value) || 0); save(); render(); };
@@ -527,20 +702,26 @@
   };
   $('#csvBtn').onclick = () => { const t = csvText(); if (!t) return toast('No game yet'); download(S.team + '-playcount-' + lastGame().date + '.csv', t, 'text/csv'); };
 
-  $('#exportBtn').onclick = () => download(S.team + '-playcount-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(S, null, 2), 'application/json');
+  $('#exportBtn').onclick = () => download(S.team + '-playcount-backup-' + today() + '.json', JSON.stringify(S, null, 2), 'application/json');
   $('#importBtn').onclick = () => $('#importFile').click();
   $('#importFile').onchange = (e) => {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
     r.onload = () => {
-      try { const d = JSON.parse(r.result); if (!Array.isArray(d.roster) || !Array.isArray(d.games)) throw new Error('bad'); S = Object.assign(defaults(), d); save(); render(); toast('Restored'); }
-      catch (err) { toast('Not a valid backup'); }
+      try {
+        const d = JSON.parse(r.result);
+        if (Array.isArray(d.roster) && Array.isArray(d.games)) S = migrate(d);
+        else if (Array.isArray(d.roster) && Array.isArray(d.events)) S = Object.assign(defaults(), d);
+        else throw new Error('bad');
+        save(); render(); toast('Restored');
+      } catch (err) { toast('Not a valid backup'); }
       e.target.value = '';
     };
     r.readAsText(f);
   };
-  $('#resetBtn').onclick = () => ask('Delete every game and reset the roster to the White league sheet?', () => { localStorage.removeItem(KEY); S = load(); save(); render(); });
-  $('#loadWhiteBtn').onclick = loadWhiteRoster;
+  $('#resetBtn').onclick = () => ask('Delete every game, practice, and play count, and reset the roster to the White league sheet?', () => {
+    localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY); S = load(); save(); render();
+  });
 
   window.addEventListener('storage', (e) => { if (e.key === KEY) { S = load(); render(); } });
 
