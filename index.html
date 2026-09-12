@@ -14,7 +14,7 @@
     --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  html, body { margin: 0; height: 100%; max-width: 100%; overflow-x: hidden; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     touch-action: manipulation; overscroll-behavior: none; }
   body { display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
@@ -56,7 +56,7 @@
 
   /* Segmented control */
   .seg { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; margin: 8px 0; }
-  .seg button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  .seg button { flex: 1 1 0; min-width: 0; border: 0; background: none; color: var(--muted); padding: 8px 6px; border-radius: 8px; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .seg button.active { background: var(--panel2); color: var(--text); }
 
   /* Unit chips */
@@ -70,6 +70,30 @@
   .posin { width: 66px; text-align: center; min-height: 38px; padding: 4px 6px; font-size: 14px; flex: none; text-transform: uppercase; }
   .chip .pos { font-size: 11px; font-weight: 800; letter-spacing: .06em; margin-top: 3px; color: var(--amber); }
   .chip.on .pos { color: #92400e; }
+
+
+  /* Field diagram */
+  .fieldwrap { position: relative; overflow-x: auto; background: #14532d; border: 1px solid #166534; border-radius: 14px;
+    padding: 10px 6px; margin-bottom: 10px; overflow: hidden; }
+  .fieldwrap::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: rgba(255,255,255,.55); }
+  .fieldwrap .los { position: absolute; left: 8px; top: 12px; font-size: 10px; color: rgba(255,255,255,.7); letter-spacing: .08em; }
+  .frow { display: flex; justify-content: center; align-items: flex-start; gap: 0; margin: 14px 0 10px; }
+  .fspot { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: none; border: 0; padding: 0; color: #fff; }
+  .fspot .dot { width: 42px; height: 42px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.45); color: #fff; }
+  .fspot.on .dot { background: var(--accent); color: var(--accent-text); border-color: #fff; }
+  .fspot.low .dot { border-color: var(--red); }
+  .fspot.mid .dot { border-color: var(--amber); }
+  .fspot .pl { font-size: 10px; opacity: .95; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fspot .ps { font-size: 9px; font-weight: 800; letter-spacing: .05em; color: #fde68a; }
+  .frow.tight .dot { width: 32px; height: 32px; font-size: 11px; border-width: 2px; }
+  .frow.tight .pl { font-size: 9px; }
+  .frow.tight .ps { font-size: 8px; }
+  .benchbar { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 2px; }
+  .benchbar .bchip { flex: none; border-radius: 999px; padding: 6px 12px; min-height: 38px; font-size: 13px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--text); }
+  .benchbar .bchip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 
   /* Player grid (game view) */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
@@ -163,11 +187,17 @@
     </div>
     <div id="gameArea" style="display:none">
       <div class="seg" id="modeSeg">
-        <button data-mode="lineup">Lineup: one button per play</button>
-        <button data-mode="tap">Tap: press each player</button>
+        <button data-mode="lineup">Lineup</button>
+        <button data-mode="tap">Tap each player</button>
       </div>
       <p class="muted small hint" id="modeHint"></p>
       <div class="units" id="unitRow"></div>
+      <div class="row" id="viewRow" style="justify-content:flex-end;margin-bottom:6px"><button class="btn small" id="fieldToggle">Field view</button></div>
+      <div id="fieldView" style="display:none">
+        <div class="fieldwrap" id="fieldBox"><span class="los">LINE OF SCRIMMAGE</span></div>
+        <p class="muted small" style="margin:0 0 6px">Tap a spot to sub that player out. Bench below.</p>
+        <div class="benchbar" id="benchBar"></div>
+      </div>
       <div class="grid" id="playerGrid"></div>
       <div class="sticky-actions">
         <div id="lineupActions">
@@ -402,6 +432,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     roster: [],          // {id, num, name, team:'White'|'Blue'}
     units: [],           // {id, name, members:[playerId], pos:{playerId:'QB'}} e.g. Hawk, Viper
     activeUnitId: null,  // unit last sent out, used to label positions on the field
+    fieldView: false,    // show the formation diagram instead of the list
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
     selectedEventId: null,
@@ -562,6 +593,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       }
       grid.appendChild(b);
     });
+    const useField = !tap && S.fieldView;
+    $('#fieldView').style.display = useField ? '' : 'none';
+    $('#playerGrid').style.display = useField ? 'none' : '';
+    $('#viewRow').style.display = tap ? 'none' : '';
+    $('#fieldToggle').textContent = useField ? 'List view' : 'Field view';
+    if (useField) renderField(g, counts, au);
     const n = lineupIds().length;
     const info = $('#onFieldInfo');
     info.innerHTML = '<b>' + n + '</b> on field' + (S.fieldSize ? ' <span class="muted">/ ' + S.fieldSize + '</span>' : '');
@@ -577,6 +614,66 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     log.innerHTML = g.plays.map((pl, i) =>
       '<div><b>#' + (i + 1) + '</b> · ' + pl.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(', ') + '</div>'
     ).reverse().join('');
+  }
+
+
+  // Rows come from the unit chart: one band per table, columns left to right as pasted.
+  function bandFor(pos) {
+    const p = String(pos || '').toUpperCase().replace(/^[LR]-/, '');
+    if (/^(DE|DT|DG|NG|NT|DL|T|G|C|OL|LT|LG|RT|RG|TE|WR)$/.test(p)) return 0;
+    if (/^(MLB|OLB|ILB|LB|QB)$/.test(p)) return 1;
+    if (/^(CB|S|SS|FS|DB|SAFETY|RB|FB|HB)$/.test(p)) return 2;
+    return 3;
+  }
+  function sideRank(pos) {
+    const p = String(pos || '').toUpperCase();
+    return p.indexOf('L-') === 0 ? 0 : (p.indexOf('R-') === 0 ? 2 : 1);
+  }
+  function formationRows(u, ids) {
+    const rows = {};
+    ids.forEach(id => {
+      const lay = (u && u.layout) ? u.layout[id] : null;
+      const pos = (u && u.pos) ? u.pos[id] : '';
+      const r = lay ? lay.r : bandFor(pos);
+      const c = lay ? lay.c : (sideRank(pos) * 100 + (lastName(player(id)) || '').charCodeAt(0));
+      if (!rows[r]) rows[r] = [];
+      rows[r].push({ id: id, c: c, pos: pos });
+    });
+    return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c));
+  }
+  function renderField(g, counts, au) {
+    const box = $('#fieldBox');
+    box.innerHTML = '<span class="los">LINE OF SCRIMMAGE</span>';
+    const onIds = lineupIds();
+    if (!onIds.length) {
+      box.innerHTML += '<div class="empty" style="color:rgba(255,255,255,.8)">Nobody on the field. Tap a unit, or a name below.</div>';
+    }
+    formationRows(au, onIds).forEach(row => {
+      const div = document.createElement('div');
+      div.className = 'frow' + (row.length >= 7 ? ' tight' : '');
+      row.forEach(spot => {
+        const p = player(spot.id); if (!p) return;
+        const b = document.createElement('button');
+        b.className = 'fspot on ' + level(counts[p.id]);
+        b.innerHTML = '<span class="dot">' + esc(numStr(p) || String(counts[p.id])) + '</span>' +
+          (spot.pos ? '<span class="ps">' + esc(spot.pos) + '</span>' : '') +
+          '<span class="pl">' + esc(lastName(p)) + '</span>';
+        b.onclick = () => toggle(p.id);
+        div.appendChild(b);
+      });
+      box.appendChild(div);
+    });
+    const bench = $('#benchBar');
+    bench.innerHTML = '';
+    sortRoster(presentRoster(g)).forEach(p => {
+      if (onIds.indexOf(p.id) >= 0) return;
+      const b = document.createElement('button');
+      b.className = 'bchip';
+      b.textContent = (numStr(p) ? numStr(p) + ' ' : '') + lastName(p) + ' · ' + counts[p.id];
+      b.onclick = () => toggle(p.id);
+      bench.appendChild(b);
+    });
+    if (!bench.children.length) bench.innerHTML = '<span class="muted small">Everyone is on the field.</span>';
   }
 
   function renderUnitRow(g, tap) {
@@ -681,18 +778,18 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function parseChart(text) {
     const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    let positions = null; const order = []; const byName = {}; const problems = [];
+    let positions = null, band = -1; const order = []; const byName = {}; const problems = [];
     lines.forEach(line => {
       const cells = splitCells(line);
       if (cells.length < 2) return;
       const body = cells.slice(1);
       const filled = body.filter(Boolean);
       // A sheet often stacks several tables, each with its own header row.
-      if (/^unit\b/i.test(cells[0])) { positions = body.map(s => s.toUpperCase()); return; }
+      if (/^unit\b/i.test(cells[0])) { positions = body.map(s => s.toUpperCase()); band++; return; }
       if (positions === null) {
         const matched = filled.filter(c => matchPlayer(c)).length;
-        if (filled.length && matched * 2 < filled.length) { positions = body.map(s => s.toUpperCase()); return; }
-        positions = body.map(() => '');
+        if (filled.length && matched * 2 < filled.length) { positions = body.map(s => s.toUpperCase()); band++; return; }
+        positions = body.map(() => ''); band++;
       }
       const name = cells[0].replace(/[^A-Za-z0-9 '-]/g, '').trim().toUpperCase();
       if (!name) return;
@@ -705,7 +802,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         const pos = (positions[i] || '').toUpperCase();
         const seen = row.picks.filter(x => x.id === p.id)[0];
         if (seen) { if (!seen.pos && pos) seen.pos = pos; }
-        else row.picks.push({ id: p.id, pos: pos });
+        else row.picks.push({ id: p.id, pos: pos, r: Math.max(band, 0), c: i });
       });
     });
     return { rows: order.map(n => byName[n]).filter(r => r.picks.length), problems: problems };
@@ -726,11 +823,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     let made = 0;
     res.rows.forEach(r => {
       let u = myUnits().filter(x => x.name.toLowerCase() === r.name.toLowerCase())[0];
-      if (!u) { u = { id: uid(), name: r.name, team: S.team, members: [], pos: {} }; S.units.push(u); made++; }
+      if (!u) { u = { id: uid(), name: r.name, team: S.team, members: [], pos: {}, layout: {} }; S.units.push(u); made++; }
       if (!u.pos) u.pos = {};
+      if (!u.layout) u.layout = {};
       r.picks.forEach(pk => {
         if (u.members.indexOf(pk.id) < 0) u.members.push(pk.id);
         if (pk.pos) u.pos[pk.id] = pk.pos;
+        if (typeof pk.r === 'number') u.layout[pk.id] = { r: pk.r, c: pk.c };
       });
     });
     save(); render();
@@ -1080,6 +1179,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   };
   $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = poolFor(e).map(p => p.id); save(); render(); } };
   document.querySelectorAll('#rosterSeg button').forEach(b => b.onclick = () => { S.rosterTeam = b.dataset.team; save(); render(); });
+  $('#fieldToggle').onclick = () => { S.fieldView = !S.fieldView; save(); renderGame(); };
   $('#pushBtn').onclick = pushAttendance;
   $('#sheetUrl').onchange = (e) => { S.sheetUrl = e.target.value.trim(); save(); render(); };
   $('#sheetTestBtn').onclick = async () => {
