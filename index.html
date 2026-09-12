@@ -232,6 +232,7 @@
       <div class="row" style="margin-bottom:6px">
         <button class="btn small" id="allHereBtn">Everyone here</button>
         <button class="btn small" id="noneHereBtn">Clear</button>
+        <button class="btn small" id="pushBtn">Send to Sheet</button>
         <span class="muted small grow" style="text-align:right" id="attendCount"></span>
       </div>
       <div id="attendList"></div>
@@ -244,8 +245,13 @@
 
   <!-- ROSTER VIEW -->
   <section class="view" id="view-roster">
+    <div class="seg" id="rosterSeg">
+      <button data-team="White">White</button>
+      <button data-team="Blue">Blue</button>
+    </div>
+    <p class="muted small hint" id="rosterNote"></p>
     <div class="card">
-      <h2>Add player</h2>
+      <h2 id="addHead">Add player</h2>
       <form id="addForm" class="row">
         <input id="addNum" type="number" inputmode="numeric" placeholder="#" min="0" max="99">
         <input id="addName" placeholder="Name" class="grow" autocomplete="off">
@@ -297,6 +303,12 @@
         <button class="btn danger grow" id="resetBtn">Reset Everything</button>
       </div>
       <p class="muted small">Everything is saved on this device only. Use Backup to move it to another phone.</p>
+    </div>
+    <div class="card">
+      <h2>Google Sheet</h2>
+      <p class="muted small" style="margin:0 0 6px">Paste the web app link from the Apps Script you deployed on your attendance sheet. Attendance then posts straight into it. The link is stored on this device only.</p>
+      <input id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+      <div class="row" style="margin-top:8px"><button class="btn small" id="sheetTestBtn">Send a test row</button><span class="muted small grow" id="sheetStatus"></span></div>
     </div>
   </section>
 </main>
@@ -360,8 +372,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // and is then kept on the device. Names can also just be typed on the Roster tab.
   // Accepts either a plain comma list (#r=John Smith,Fox Boyle) or base64 of one.
   // A link chopped short by a messaging app still loads the names that survived.
-  function rosterFromLink() {
-    const m = ((location.hash || '') + '&' + (location.search || '')).match(/[#&?]r=([^&]+)/);
+  function rosterFromLink(key) {
+    const m = ((location.hash || '') + '&' + (location.search || '')).match(new RegExp('[#&?]' + key + '=([^&]+)'));
     if (!m) return null;
     let txt = m[1];
     try { txt = decodeURIComponent(txt.replace(/\+/g, ' ')); } catch (e) { /* use raw */ }
@@ -380,8 +392,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // ---------- state ----------
   const defaults = () => ({
     team: 'White', minPlays: 12, fieldSize: 11, mode: 'lineup',
-    template: [],        // names from the personal link, used by the Load roster button
-    roster: [],          // {id, num, name}
+    template: [],        // White names from the personal link
+    templateB: [],       // Blue names from the personal link
+    rosterTeam: 'White', // which team the Roster tab is showing
+    sheetUrl: '',        // Apps Script web app URL for pushing attendance
+    roster: [],          // {id, num, name, team:'White'|'Blue'}
     units: [],           // {id, name, members:[playerId], pos:{playerId:'QB'}} e.g. Hawk, Viper
     activeUnitId: null,  // unit last sent out, used to label positions on the field
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
@@ -390,7 +405,6 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     lineup: []           // sticky on-field selection (lineup mode)
   });
   let S = load();
-  applyLink();
 
   function load() {
     try {
@@ -402,10 +416,16 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     return defaults();
   }
   function applyLink() {
-    const names = rosterFromLink();
-    if (!names) return;
-    S.template = names;
-    if (!S.roster.length) names.forEach(n => S.roster.push({ id: uid(), num: '', name: n }));
+    const w = rosterFromLink('r'), b = rosterFromLink('b');
+    if (!w && !b) return;
+    if (w) {
+      S.template = w;
+      if (!whiteRoster().length) w.forEach(n => S.roster.push({ id: uid(), num: '', name: n, team: 'White' }));
+    }
+    if (b) {
+      S.templateB = b;
+      if (!teamRoster('Blue').length) b.forEach(n => S.roster.push({ id: uid(), num: '', name: n, team: 'Blue' }));
+    }
     save();
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* file:// */ }
   }
@@ -426,6 +446,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   const games = () => S.events.filter(e => e.type === 'game').sort(byDate);
   const lastGame = () => curGame() || games().slice(-1)[0] || null;
   const player = (id) => S.roster.find(p => p.id === id);
+  // Play counts, games and units are White only. Practices cover the whole program.
+  const teamOf = (p) => p.team || 'White';
+  const teamRoster = (t) => S.roster.filter(p => teamOf(p) === t);
+  const whiteRoster = () => teamRoster('White');
+  const poolFor = (e) => (e && e.type === 'practice') ? S.roster : whiteRoster();
   const num = (p) => (p.num === '' || p.num == null) ? 999 : Number(p.num);
   const sortRoster = (arr) => arr.slice().sort((a, b) => (num(a) - num(b)) || a.name.localeCompare(b.name));
   const presentRoster = (e) => sortRoster(S.roster.filter(p => e.present.includes(p.id)));
@@ -449,7 +474,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function evLabel(e) { return e.type === 'game' ? 'vs ' + (e.opponent || 'TBD') : 'Practice'; }
   function addEvent(type, date, opponent) {
-    const e = { id: uid(), type: type, date: date || today(), opponent: (opponent || '').trim(), present: S.roster.map(p => p.id), plays: [] };
+    const pool = type === 'practice' ? S.roster : whiteRoster();
+    const e = { id: uid(), type: type, date: date || today(), opponent: (opponent || '').trim(), present: pool.map(p => p.id), plays: [] };
     S.events.push(e);
     return e;
   }
@@ -498,12 +524,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const grid = $('#playerGrid'); grid.innerHTML = '';
     const ros = presentRoster(g);
     if (!ros.length) {
-      const noRoster = !S.roster.length;
+      const noRoster = !whiteRoster().length;
       grid.innerHTML = '<div class="empty" style="grid-column:1/-1">' + (noRoster
         ? 'There are no players on the roster yet.<br><br><button class="btn small" id="goRosterBtn">Add the team</button>'
         : 'Nobody is marked present for this game.<br><br><button class="btn small" id="allPresentBtn">Mark everyone present</button>') + '</div>';
       if (noRoster) $('#goRosterBtn').onclick = () => showView('roster');
-      else $('#allPresentBtn').onclick = () => { g.present = S.roster.map(p => p.id); save(); render(); toast('Everyone marked present'); };
+      else $('#allPresentBtn').onclick = () => { g.present = whiteRoster().map(p => p.id); save(); render(); toast('Everyone marked present'); };
     }
     ros.forEach(p => {
       const n = numStr(p), parts = p.name.trim().split(/\s+/);
@@ -596,8 +622,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!draft) return;
     $('#unitCount').textContent = draft.members.length + ' selected';
     const box = $('#unitMembers'); box.innerHTML = '';
-    if (!S.roster.length) { box.innerHTML = '<div class="empty">Add players on the Roster tab first.</div>'; return; }
-    sortRoster(S.roster).forEach(p => {
+    if (!whiteRoster().length) { box.innerHTML = '<div class="empty">Add White players on the Roster tab first.</div>'; return; }
+    sortRoster(whiteRoster()).forEach(p => {
       const inU = draft.members.includes(p.id);
       const r = document.createElement('div');
       r.className = 'arow' + (inU ? ' here' : '');
@@ -635,7 +661,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       (p) => t.length > 3 && parts(p).slice(-1)[0].indexOf(t.slice(0, -1)) === 0
     ];
     for (let i = 0; i < tries.length; i++) {
-      const m = S.roster.filter(tries[i]);
+      const m = whiteRoster().filter(tries[i]);
       if (m.length === 1) return m[0];
     }
     return null;
@@ -756,7 +782,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const row = document.createElement('div');
       row.className = 'rrow' + (e.id === S.selectedEventId ? ' sel' : '');
       row.innerHTML = '<span class="grow" style="cursor:pointer"><b>' + fmtDate(e.date) + '</b> <span class="tag ' + e.type + '">' + esc(evLabel(e)) + '</span>' +
-        '<br><span class="muted small">' + e.present.length + ' of ' + S.roster.length + ' here' + (e.type === 'game' ? ' · ' + e.plays.length + ' plays' : '') + '</span></span>' +
+        '<br><span class="muted small">' + e.present.length + ' of ' + poolFor(e).length + ' here' + (e.type === 'game' ? ' · ' + e.plays.length + ' plays' : '') + '</span></span>' +
         (e.type === 'game' ? (e.id === S.currentGameId ? '<span class="tag live">LIVE</span>' : '<button class="btn small open">Count</button>') : '') +
         '<button class="btn small danger del">✕</button>';
       row.querySelector('.grow').onclick = () => { S.selectedEventId = e.id; save(); renderAttend(); };
@@ -774,38 +800,64 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#attendCard').style.display = sel ? '' : 'none';
     if (sel) {
       $('#attendTitle').innerHTML = 'Attendance · ' + fmtDate(sel.date) + ' <span class="plain">' + esc(evLabel(sel)) + '</span>';
-      $('#attendCount').textContent = sel.present.length + ' of ' + S.roster.length + ' here';
+      const pool = poolFor(sel);
+      $('#attendCount').textContent = pool.filter(p => sel.present.includes(p.id)).length + ' of ' + pool.length + ' here';
       const al = $('#attendList'); al.innerHTML = '';
-      sortRoster(S.roster).forEach(p => {
-        const here = sel.present.includes(p.id);
-        const row = document.createElement('div');
-        row.className = 'arow' + (here ? ' here' : '');
-        row.innerHTML = '<span class="chk">' + (here ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>';
-        row.onclick = () => {
-          if (here) sel.present = sel.present.filter(i => i !== p.id); else sel.present.push(p.id);
-          if (here && sel.id === S.currentGameId) S.lineup = S.lineup.filter(i => i !== p.id);
-          save(); render();
-        };
-        al.appendChild(row);
+      const groups = sel.type === 'practice' ? ['White', 'Blue'] : ['White'];
+      groups.forEach(t => {
+        const members = sortRoster(teamRoster(t));
+        if (!members.length) return;
+        if (sel.type === 'practice') {
+          const h = document.createElement('div');
+          h.className = 'muted small';
+          h.style.cssText = 'padding:12px 4px 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em';
+          h.textContent = t + ' · ' + members.filter(p => sel.present.includes(p.id)).length + ' of ' + members.length;
+          al.appendChild(h);
+        }
+        members.forEach(p => {
+          const here = sel.present.includes(p.id);
+          const row = document.createElement('div');
+          row.className = 'arow' + (here ? ' here' : '');
+          row.innerHTML = '<span class="chk">' + (here ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>';
+          row.onclick = () => {
+            if (here) sel.present = sel.present.filter(i => i !== p.id); else sel.present.push(p.id);
+            if (here && sel.id === S.currentGameId) S.lineup = S.lineup.filter(i => i !== p.id);
+            save(); render();
+          };
+          al.appendChild(row);
+        });
       });
     }
 
     const gs = S.events.filter(e => e.type === 'game'), ps = S.events.filter(e => e.type === 'practice');
-    $('#attendSeason').innerHTML = sortRoster(S.roster).map(p => {
-      const ga = gs.filter(e => e.present.includes(p.id)).length, pa = ps.filter(e => e.present.includes(p.id)).length;
-      const tot = gs.length + ps.length, att = ga + pa, pct = tot ? Math.round(att / tot * 100) : 0;
-      return '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
-        '<span class="muted small">G ' + ga + '/' + gs.length + ' · P ' + pa + '/' + ps.length + '</span>' +
-        '<span class="pc" style="color:' + (pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)') + '">' + pct + '%</span></div>';
+    $('#attendSeason').innerHTML = ['White', 'Blue'].map(t => {
+      const members = sortRoster(teamRoster(t));
+      if (!members.length) return '';
+      const head = '<div class="muted small" style="padding:10px 4px 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">' + t + '</div>';
+      return head + members.map(p => {
+        const isW = t === 'White';
+        const ga = isW ? gs.filter(e => e.present.includes(p.id)).length : 0;
+        const pa = ps.filter(e => e.present.includes(p.id)).length;
+        const tot = (isW ? gs.length : 0) + ps.length, pct = tot ? Math.round((ga + pa) / tot * 100) : 0;
+        return '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
+          '<span class="muted small">' + (isW ? 'G ' + ga + '/' + gs.length + ' · ' : '') + 'P ' + pa + '/' + ps.length + '</span>' +
+          '<span class="pc" style="color:' + (pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)') + '">' + pct + '%</span></div>';
+      }).join('');
     }).join('') || '<div class="empty">No players yet.</div>';
   }
 
   function renderRoster() {
     const list = $('#rosterList');
-    const ros = sortRoster(S.roster);
+    const t = S.rosterTeam;
+    document.querySelectorAll('#rosterSeg button').forEach(b => b.classList.toggle('active', b.dataset.team === t));
+    $('#addHead').textContent = 'Add ' + t + ' player';
+    $('#rosterNote').innerHTML = t === 'White'
+      ? 'The White team. Games, play counts and units all use this list.'
+      : 'The Blue team. These players appear only in <b>practice</b> attendance, never in games or play counts.';
+    $('#loadTeamRow').style.display = (t === 'White' ? S.template : S.templateB).length ? '' : 'none';
+    const ros = sortRoster(teamRoster(t));
     $('#rosterCount').textContent = ros.length ? '(' + ros.length + ')' : '';
-    $('#loadTeamRow').style.display = S.template.length ? '' : 'none';
-    if (!ros.length) { list.innerHTML = '<div class="empty">No players yet. Paste the team into the box above.</div>'; return; }
+    if (!ros.length) { list.innerHTML = '<div class="empty">No ' + t + ' players yet. Paste them into the box above.</div>'; return; }
     list.innerHTML = '';
     ros.forEach(p => {
       const row = document.createElement('div'); row.className = 'rrow';
@@ -827,9 +879,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 
   function renderSettings() {
     $('#teamName').value = S.team; $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
+    if (document.activeElement !== $('#sheetUrl')) $('#sheetUrl').value = S.sheetUrl || '';
+    $('#pushBtn').style.display = S.sheetUrl ? '' : 'none';
     const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
     games().forEach(g => { const c = countsFor(g); Object.keys(c).forEach(id => { if (tot[id] && c[id] > 0) { tot[id].plays += c[id]; tot[id].games++; } }); });
-    $('#seasonList').innerHTML = sortRoster(S.roster).map(p =>
+    $('#seasonList').innerHTML = sortRoster(whiteRoster()).map(p =>
       '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
       '<span class="muted small">' + tot[p.id].games + ' gm</span><span class="pc">' + tot[p.id].plays + '</span></div>'
     ).join('') || '<div class="empty">No players yet.</div>';
@@ -868,11 +922,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     S.lineup = g.plays.length && S.mode === 'lineup' ? g.plays[g.plays.length - 1].slice() : [];
     save(); render(); showView('game');
   }
-  function addPlayer(numValue, name) {
+  function addPlayer(numValue, name, team) {
     name = (name || '').trim(); if (!name) return false;
-    const p = { id: uid(), num: (numValue === '' || numValue == null) ? '' : Number(numValue), name: name };
+    const tm = team || S.rosterTeam || 'White';
+    const p = { id: uid(), num: (numValue === '' || numValue == null) ? '' : Number(numValue), name: name, team: tm };
     S.roster.push(p);
-    S.events.forEach(e => { if (e.date >= today()) e.present.push(p.id); });
+    S.events.forEach(e => { if (e.date >= today() && (e.type === 'practice' || tm === 'White')) e.present.push(p.id); });
     return true;
   }
   function loadUnit(id) {
@@ -886,10 +941,49 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     toast(u.name + ': ' + S.lineup.length + ' on field' + (out ? ', ' + out + ' absent' : ''));
   }
   function loadTeamRoster() {
-    const have = new Set(S.roster.map(p => p.name.toLowerCase()));
+    const t = S.rosterTeam;
+    const have = new Set(teamRoster(t).map(p => p.name.toLowerCase()));
     let added = 0;
-    S.template.forEach(n => { if (!have.has(n.toLowerCase())) { addPlayer('', n); added++; } });
+    (t === 'White' ? S.template : S.templateB).forEach(n => { if (!have.has(n.toLowerCase())) { addPlayer('', n, t); added++; } });
     save(); render(); toast(added ? 'Added ' + added + ' player' + (added === 1 ? '' : 's') : 'Roster already loaded');
+  }
+
+  // ---------- google sheet push ----------
+  function attendancePayload(e) {
+    const rows = sortRoster(poolFor(e)).map(p => ({
+      name: p.name, num: numStr(p), team: teamOf(p), present: e.present.indexOf(p.id) >= 0
+    }));
+    return { kind: 'attendance', type: e.type, date: e.date, label: evLabel(e), team: S.team, rows: rows };
+  }
+  async function postToSheet(payload) {
+    // No custom headers, so the browser sends a simple request and skips the CORS preflight.
+    const body = JSON.stringify(payload);
+    try {
+      const r = await fetch(S.sheetUrl, { method: 'POST', body: body, redirect: 'follow' });
+      const txt = await r.text();
+      let out = null;
+      try { out = JSON.parse(txt); } catch (err) { /* not json */ }
+      if (out && out.ok === false) return { ok: false, msg: out.error || 'the script reported an error' };
+      if (out && out.ok) return { ok: true, msg: 'matched ' + out.matched + (out.missed && out.missed.length ? ', missed ' + out.missed.length : '') + ', column ' + out.column };
+      return { ok: true, msg: 'sent' };
+    } catch (err) {
+      try {
+        await fetch(S.sheetUrl, { method: 'POST', mode: 'no-cors', body: body });
+        return { ok: true, msg: 'sent, but the sheet did not reply so check it' };
+      } catch (e2) {
+        return { ok: false, msg: 'could not reach the sheet' };
+      }
+    }
+  }
+  async function pushAttendance() {
+    const e = ev(S.selectedEventId);
+    if (!e) return;
+    if (!S.sheetUrl) { showView('settings'); return toast('Add your Sheet link in Settings first'); }
+    const btn = $('#pushBtn'); const was = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Sending...';
+    const res = await postToSheet(attendancePayload(e));
+    btn.disabled = false; btn.textContent = was;
+    toast(res.ok ? 'Sheet: ' + res.msg : 'Failed: ' + res.msg);
   }
 
   // ---------- share / export ----------
@@ -899,7 +993,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const ros = presentRoster(g).sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
     const lines = [S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
     ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < S.minPlays ? ' (needs ' + (S.minPlays - c[p.id]) + ')' : '')));
-    const absent = S.roster.filter(p => !g.present.includes(p.id));
+    const absent = whiteRoster().filter(p => !g.present.includes(p.id));
     if (absent.length) lines.push('Absent: ' + sortRoster(absent).map(p => p.name).join(', '));
     return lines.join('\n');
   }
@@ -908,7 +1002,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const c = countsFor(g);
     const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
     const rows = [['Number', 'Name', 'Plays', 'Present', 'Opponent', 'Date'].join(',')];
-    sortRoster(S.roster).forEach(p => rows.push([numStr(p), q(p.name), c[p.id], g.present.includes(p.id) ? 'yes' : 'no', q(g.opponent || ''), g.date].join(',')));
+    sortRoster(whiteRoster()).forEach(p => rows.push([numStr(p), q(p.name), c[p.id], g.present.includes(p.id) ? 'yes' : 'no', q(g.opponent || ''), g.date].join(',')));
     return rows.join('\n');
   }
   function download(name, text, type) {
@@ -953,7 +1047,18 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     S.selectedEventId = e.id; $('#evOpp').value = ''; save(); render();
     toast((e.type === 'game' ? 'Game' : 'Practice') + ' added for ' + fmtDate(e.date));
   };
-  $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = S.roster.map(p => p.id); save(); render(); } };
+  $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = poolFor(e).map(p => p.id); save(); render(); } };
+  document.querySelectorAll('#rosterSeg button').forEach(b => b.onclick = () => { S.rosterTeam = b.dataset.team; save(); render(); });
+  $('#pushBtn').onclick = pushAttendance;
+  $('#sheetUrl').onchange = (e) => { S.sheetUrl = e.target.value.trim(); save(); render(); };
+  $('#sheetTestBtn').onclick = async () => {
+    S.sheetUrl = $('#sheetUrl').value.trim(); save();
+    const st = $('#sheetStatus');
+    if (!S.sheetUrl) { st.textContent = 'Paste the link first'; return; }
+    st.textContent = 'Sending...';
+    const res = await postToSheet({ kind: 'attendance', type: 'practice', date: today(), label: 'Test', team: S.team, rows: [] });
+    st.textContent = res.ok ? 'Worked: ' + res.msg : 'Failed: ' + res.msg;
+  };
   $('#noneHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = []; if (e.id === S.currentGameId) S.lineup = []; save(); render(); } };
 
   $('#addForm').onsubmit = (e) => {
@@ -1022,13 +1127,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     r.readAsText(f);
   };
   $('#resetBtn').onclick = () => ask('Delete every game, practice, and play count, and start the roster over?', () => {
-    const keep = S.template.slice();
+    const keepW = S.template.slice(), keepB = S.templateB.slice(), url = S.sheetUrl;
     localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY);
-    S = load(); S.template = keep;
-    keep.forEach(n => S.roster.push({ id: uid(), num: '', name: n }));
+    S = load(); S.template = keepW; S.templateB = keepB; S.sheetUrl = url;
+    keepW.forEach(n => S.roster.push({ id: uid(), num: '', name: n, team: 'White' }));
+    keepB.forEach(n => S.roster.push({ id: uid(), num: '', name: n, team: 'Blue' }));
     save(); render();
   });
 
+  applyLink();
   window.addEventListener('storage', (e) => { if (e.key === KEY) { S = load(); render(); } });
 
   render();
