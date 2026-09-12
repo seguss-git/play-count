@@ -101,6 +101,14 @@
   .frow.tight .dot { width: 32px; height: 32px; font-size: 11px; border-width: 2px; }
   .frow.tight .pl { font-size: 9px; }
   .frow.tight .ps { font-size: 8px; }
+  .cand { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); width: 100%;
+    background: none; border-left: 0; border-right: 0; border-top: 0; color: var(--text); text-align: left; min-height: 50px; }
+  .cand:last-child { border-bottom: 0; }
+  .cand .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cand .why { font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; background: var(--panel2); color: var(--muted); }
+  .cand .why.t0 { background: rgba(34,197,94,.2); color: var(--green); font-weight: 700; }
+  .cand .why.t1 { background: rgba(251,191,36,.18); color: var(--amber); font-weight: 700; }
+  .cand .pcnt { width: 62px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; }
   .benchbar { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 2px; }
   .benchbar .bchip { flex: none; border-radius: 999px; padding: 6px 12px; min-height: 38px; font-size: 13px;
     background: var(--panel2); border: 1px solid var(--line); color: var(--text); }
@@ -206,7 +214,7 @@
       <div class="row" id="viewRow" style="justify-content:flex-end;margin-bottom:6px"><button class="btn small" id="fieldToggle">Field view</button></div>
       <div id="fieldView" style="display:none">
         <div class="fieldwrap" id="fieldBox"><span class="los">LINE OF SCRIMMAGE</span></div>
-        <p class="muted small" style="margin:0 0 6px">Tap a spot to sub that player out. Bench below.</p>
+        <p class="muted small" style="margin:0 0 6px">Tap a player to see who can replace him at that spot. Bench below.</p>
         <div class="benchbar" id="benchBar"></div>
       </div>
       <div class="grid" id="playerGrid"></div>
@@ -312,6 +320,14 @@
       <div class="row" style="margin-top:10px" id="loadTeamRow"><button class="btn small" id="loadTeamBtn">Load team roster</button><span class="muted small">Re-adds anyone from your team link who is missing.</span></div>
     </div>
     <div class="card">
+      <h2>Best fit by position <span class="muted plain">(from combine testing)</span></h2>
+      <div class="row" style="margin-bottom:6px">
+        <select id="fitPos" class="grow"></select>
+      </div>
+      <div id="fitList"></div>
+      <p class="muted small" style="margin:8px 0 0">Ranked on 40 time, 5-10-5, 3-cone, broad jump and weight, weighted for that spot. A star marks someone already on the chart there.</p>
+    </div>
+    <div class="card">
       <h2>Units <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
       <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
       <div id="unitList" class="ulist"></div>
@@ -408,6 +424,20 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     <button class="btn primary grow" id="chartImport">Import</button>
   </div>
 </dialog>
+<dialog id="subDlg">
+  <h2 style="margin:0 0 2px;font-size:17px" id="subTitle"></h2>
+  <p class="muted small" style="margin:0 0 10px" id="subSub"></p>
+  <div class="seg" id="subSeg" style="margin:0 0 8px">
+    <button data-sort="chart">On the chart</button>
+    <button data-sort="fit">Best fit</button>
+    <button data-sort="plays">Needs plays</button>
+  </div>
+  <div id="subList" style="max-height:42vh;overflow-y:auto"></div>
+  <div class="row" style="margin-top:12px">
+    <button class="btn grow" id="subCancel">Cancel</button>
+    <button class="btn danger grow" id="subOff">Take off, no swap</button>
+  </div>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -425,6 +455,55 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     'Beau Fulk', 'Connor Griffith', 'David Higgins', 'James Kretzman', 'James Masters', 'Nicholas Olsen', 'Preston Perry',
     'Thomas Pulaski', 'Evan Reed', 'Sam Sawicki', 'William Scardigli', 'David Sheaffer', 'Griffin Spatola', 'Max Stevens',
     'Christian Strand', 'Theodore Walker', 'Alexander Jack Willcocks'];
+  // [lastName, size, speed, agility, power] as percentile ranks across the grade.
+  // Derived from the combine sheet. Raw weights and times are deliberately not shipped.
+  var ATHLETE = [
+    ['Bickmeyer', 41, 84, 78, 53],
+    ['Bongiorno', 100, 12, 8, 16],
+    ['Chernichaw', 6, 31, 63, 78],
+    ['Cohen', 34, 91, 89, 53],
+    ['Croswell', 16, 97, 89, 84],
+    ['Derrico', 9, 9, 33, 0],
+    ['Farnum', 3, 34, 44, 91],
+    ['Fischer', 31, 56, 38, 22],
+    ['Fletcher', 0, 78, 77, 31],
+    ['Fulk', 25, 87, 72, 22],
+    ['Kretzman', 84, 100, 81, 78],
+    ['Kumar', 78, 72, 39, 22],
+    ['Leuffer', 28, 0, 8, 9],
+    ['McAnany', 47, 50, 28, 88],
+    ['Olsen', 97, 22, 18, 3],
+    ['Perry', 63, 16, 28, 31],
+    ['Pewarski', 44, 75, 86, 97],
+    ['Pezley', 53, 41, 64, 59],
+    ['Pulaski', 88, 50, 80, 59],
+    ['Reed', 13, 6, 0, 44],
+    ['Roberto', 56, 69, 59, 38],
+    ['Sawicki', 81, 19, 8, 50],
+    ['Scardigli', 59, 66, 44, 44],
+    ['Seguss', 22, 66, 85, 13],
+    ['Sheaffer', 66, 44, 77, 100],
+    ['Sokolik', 50, 94, 64, 59],
+    ['Stever', 75, 53, 30, 69],
+    ['Strand', 94, 59, 71, 38],
+    ['Thistle', 72, 25, 24, 19],
+    ['Trotta', 38, 6, 30, 3],
+    ['Turowski', 91, 28, 46, 94],
+    ['Walker', 69, 37, 59, 69],
+    ['Willcocks', 19, 81, 50, 69]
+  ];
+
+  // How much each quality matters at a spot. Tuned for youth defence.
+  var FIT = {
+    interior:   { size: 0.50, power: 0.25, agility: 0.15, speed: 0.10 },
+    edge:       { size: 0.30, agility: 0.30, speed: 0.25, power: 0.15 },
+    linebacker: { speed: 0.30, agility: 0.30, power: 0.20, size: 0.20 },
+    corner:     { speed: 0.45, agility: 0.35, power: 0.20, size: 0.00 },
+    safety:     { speed: 0.35, agility: 0.30, power: 0.20, size: 0.15 },
+    skill:      { speed: 0.35, agility: 0.30, power: 0.25, size: 0.10 },
+    other:      { speed: 0.25, agility: 0.25, power: 0.25, size: 0.25 }
+  };
+
   var SEED_CHART = [
     'UNIT, L-CB, L-DE, L-DT, L-DG, R-DG, R-DT, R-DE, R-CB',
     'HAWK, Mohamed, Sokolik, McAnany, Love, Turowski, Bongiorno, Boyle, Kumar',
@@ -492,6 +571,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     activeUnitId: null,  // unit last sent out, used to label positions on the field
     fieldView: false,    // show the formation diagram instead of the list
     impMode: 'chart',    // import dialog: 'chart' or 'roster'
+    subSort: 'chart',    // how the substitute list is ordered
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
     selectedEventId: null,
@@ -584,7 +664,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
 
   // ---------- rendering ----------
-  function render() { renderHeader(); renderGame(); renderCounts(); renderAttend(); renderRoster(); renderUnitList(); renderSettings(); }
+  function render() { renderHeader(); renderGame(); renderCounts(); renderAttend(); renderRoster(); renderUnitList(); renderFitBoard(); renderSettings(); }
 
   function renderHeader() {
     const g = curGame();
@@ -702,6 +782,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function renderField(g, counts, au) {
     const box = $('#fieldBox');
     box.innerHTML = '<span class="los">LINE OF SCRIMMAGE</span>';
+    $('#subDlg').close();
     const onIds = lineupIds();
     if (!onIds.length) {
       box.innerHTML += '<div class="empty" style="color:rgba(255,255,255,.8)">Nobody on the field. Tap a unit, or a name below.</div>';
@@ -716,7 +797,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         b.innerHTML = '<span class="dot">' + esc(numStr(p) || String(counts[p.id])) + '</span>' +
           (spot.pos ? '<span class="ps">' + esc(spot.pos) + '</span>' : '') +
           '<span class="pl">' + esc(lastName(p)) + '</span>';
-        b.onclick = () => toggle(p.id);
+        b.onclick = () => openSub(p.id);
         div.appendChild(b);
       });
       box.appendChild(div);
@@ -732,6 +813,121 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       bench.appendChild(b);
     });
     if (!bench.children.length) bench.innerHTML = '<span class="muted small">Everyone is on the field.</span>';
+  }
+
+  // Who is qualified where, read straight off the depth chart.
+  function posGroup(pos) {
+    const q = String(pos || '').toUpperCase().replace(/^[LR]-/, '');
+    if (/^(DE|DT|DG|NG|NT|DL)$/.test(q)) return 'line';
+    if (/^(MLB|OLB|ILB|LB)$/.test(q)) return 'linebacker';
+    if (/^(CB|S|SS|FS|DB|SAFETY)$/.test(q)) return 'secondary';
+    if (/^(T|G|C|OL|LT|LG|RT|RG)$/.test(q)) return 'line';
+    if (/^(WR|TE|SE|FL)$/.test(q)) return 'receiver';
+    if (/^(RB|FB|HB|QB)$/.test(q)) return 'backfield';
+    return 'other';
+  }
+  function mirrorPos(pos) {
+    const q = String(pos || '').toUpperCase();
+    if (q.indexOf('L-') === 0) return 'R-' + q.slice(2);
+    if (q.indexOf('R-') === 0) return 'L-' + q.slice(2);
+    return q;
+  }
+  function positionsOf(id) {
+    const out = [];
+    myUnits().forEach(u => {
+      const q = u.pos && u.pos[id];
+      if (q && out.indexOf(q) < 0) out.push(q);
+    });
+    return out;
+  }
+  function candidatesFor(pos, g) {
+    const onField = lineupIds();
+    const counts = countsFor(g);
+    const mir = mirrorPos(pos);
+    const grp = posGroup(pos);
+    const list = [];
+    presentRoster(g).forEach(p => {
+      if (onField.indexOf(p.id) >= 0) return;
+      const ps = positionsOf(p.id);
+      let tier = 3, why = 'not on the chart';
+      if (pos && ps.indexOf(pos) >= 0) { tier = 0; why = 'plays ' + pos; }
+      else if (pos && mir !== pos && ps.indexOf(mir) >= 0) { tier = 1; why = 'plays ' + mir; }
+      else if (pos && ps.some(x => posGroup(x) === grp)) { tier = 2; why = ps.join(', '); }
+      else if (ps.length) { why = ps.join(', '); }
+      list.push({ p: p, tier: tier, why: why, plays: counts[p.id], fit: fitScore(p, pos) });
+    });
+    const byFit = (a, b) => (b.fit === null ? -1 : a.fit === null ? 1 : b.fit - a.fit);
+    if (S.subSort === 'fit') return list.sort((a, b) => byFit(a, b) || a.plays - b.plays);
+    if (S.subSort === 'plays') return list.sort((a, b) => a.plays - b.plays || byFit(a, b));
+    return list.sort((a, b) => a.tier - b.tier || byFit(a, b) || a.plays - b.plays);
+  }
+  let subOutId = null;
+  function openSub(id) {
+    const g = curGame(); if (!g) return;
+    const p = player(id); if (!p) return;
+    subOutId = id;
+    const au = S.units.find(u => u.id === S.activeUnitId);
+    const pos = (au && au.pos && au.pos[id]) || (positionsOf(id)[0] || '');
+    const counts = countsFor(g);
+    $('#subTitle').textContent = (pos ? pos + ' · ' : '') + p.name;
+    $('#subSub').textContent = counts[id] + ' plays so far. Tap who comes on, or take him off on his own.';
+    document.querySelectorAll('#subSeg button').forEach(b => b.classList.toggle('active', b.dataset.sort === S.subSort));
+    const box = $('#subList'); box.innerHTML = '';
+    const cands = candidatesFor(pos, g);
+    if (!cands.length) { box.innerHTML = '<div class="empty">Everyone present is already on the field.</div>'; }
+    cands.forEach(c => {
+      const b = document.createElement('button');
+      b.className = 'cand';
+      b.innerHTML = '<span class="nm">' + esc((numStr(c.p) ? numStr(c.p) + '  ' : '') + c.p.name) +
+        '<br><span class="why t' + c.tier + '">' + esc(c.why) + '</span></span>' +
+        '<span class="pcnt" style="color:' + fitColour(c.fit) + '">' + (c.fit === null ? 'no data' : 'fit ' + c.fit) + '</span>' +
+        '<span class="pcnt" style="color:' + (level(c.plays) === 'low' ? 'var(--red)' : level(c.plays) === 'mid' ? 'var(--amber)' : 'var(--green)') + '">' + c.plays + ' pl</span>';
+      b.onclick = () => { doSwap(subOutId, c.p.id); $('#subDlg').close(); };
+      box.appendChild(b);
+    });
+    $('#subDlg').showModal();
+  }
+  function doSwap(outId, inId) {
+    const i = S.lineup.indexOf(outId);
+    if (i < 0) return;
+    S.lineup.splice(i, 1, inId);
+    save(); renderHeader(); renderGame();
+    if (navigator.vibrate) navigator.vibrate(20);
+    const o = player(outId), n = player(inId);
+    toast(lastName(n) + ' in for ' + lastName(o));
+  }
+
+  // --- athletic fit -------------------------------------------------------
+  var ATHLETE_BY_NAME = null;
+  function athleteFor(pl) {
+    if (!pl) return null;
+    if (!ATHLETE_BY_NAME) {
+      ATHLETE_BY_NAME = {};
+      ATHLETE.forEach(a => { ATHLETE_BY_NAME[a[0].toLowerCase()] = { size: a[1], speed: a[2], agility: a[3], power: a[4] }; });
+    }
+    return ATHLETE_BY_NAME[lastName(pl).toLowerCase()] || null;
+  }
+  function fitKind(pos) {
+    const q = String(pos || '').toUpperCase().replace(/^[LR]-/, '');
+    if (/^(DG|DT|NG|NT|C|G|LG|RG)$/.test(q)) return 'interior';
+    if (/^(DE|T|LT|RT|OT)$/.test(q)) return 'edge';
+    if (/^(MLB|OLB|ILB|LB)$/.test(q)) return 'linebacker';
+    if (/^(CB|DB)$/.test(q)) return 'corner';
+    if (/^(S|SS|FS|SAFETY)$/.test(q)) return 'safety';
+    if (/^(WR|TE|SE|FL|RB|FB|HB|QB)$/.test(q)) return 'skill';
+    return 'other';
+  }
+  function fitScore(pl, pos) {
+    const a = athleteFor(pl);
+    if (!a) return null;
+    const w = FIT[fitKind(pos)] || FIT.other;
+    let total = 0, used = 0;
+    Object.keys(w).forEach(k => { total += (a[k] || 0) * w[k]; used += w[k]; });
+    return used ? Math.round(total / used) : null;
+  }
+  function fitColour(f) {
+    if (f === null) return 'var(--muted)';
+    return f >= 70 ? 'var(--green)' : f >= 45 ? 'var(--amber)' : 'var(--red)';
   }
 
   function renderUnitRow(g, tap) {
@@ -757,6 +953,31 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     row.appendChild(add);
   }
 
+  function allPositions() {
+    const seen = [];
+    myUnits().forEach(u => {
+      if (!u.pos) return;
+      Object.keys(u.pos).forEach(id => { const q = u.pos[id]; if (q && seen.indexOf(q) < 0) seen.push(q); });
+    });
+    return seen.sort();
+  }
+  function renderFitBoard() {
+    const sel = $('#fitPos');
+    const list = allPositions();
+    if (!list.length) { sel.innerHTML = '<option>No positions yet</option>'; $('#fitList').innerHTML = '<div class="empty">Import a unit chart to see this.</div>'; return; }
+    const keep = sel.value && list.indexOf(sel.value) >= 0 ? sel.value : list[0];
+    sel.innerHTML = list.map(q => '<option' + (q === keep ? ' selected' : '') + '>' + esc(q) + '</option>').join('');
+    const pos = keep;
+    const onChart = {};
+    myUnits().forEach(u => { if (u.pos) Object.keys(u.pos).forEach(id => { if (u.pos[id] === pos) onChart[id] = u.name; }); });
+    const ranked = sortRoster(gameRoster()).map(p => ({ p: p, fit: fitScore(p, pos), unit: onChart[p.id] }))
+      .sort((a, b) => (b.fit === null ? -1 : a.fit === null ? 1 : b.fit - a.fit));
+    $('#fitList').innerHTML = ranked.slice(0, 10).map(r =>
+      '<div class="crow"><span class="pname">' + (r.unit ? '★ ' : '') + esc(r.p.name) +
+      (r.unit ? ' <span class="muted small">' + esc(r.unit) + '</span>' : '') + '</span>' +
+      '<span class="pc" style="color:' + fitColour(r.fit) + '">' + (r.fit === null ? '–' : r.fit) + '</span></div>'
+    ).join('');
+  }
   function renderUnitList() {
     const list = $('#unitList');
     if (!myUnits().length) { list.innerHTML = '<div class="empty">No units yet. Build one here, or tap the players on the field and use the + button on the Game tab.</div>'; return; }
@@ -1342,6 +1563,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   };
   $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = poolFor(e).map(p => p.id); save(); render(); } };
   document.querySelectorAll('#rosterSeg button').forEach(b => b.onclick = () => { S.rosterTeam = b.dataset.team; save(); render(); });
+  document.querySelectorAll('#subSeg button').forEach(b => b.onclick = () => {
+    S.subSort = b.dataset.sort; save();
+    if (subOutId) openSub(subOutId);
+  });
+  $('#subCancel').onclick = () => $('#subDlg').close();
+  $('#subOff').onclick = () => { const id = subOutId; $('#subDlg').close(); if (id) toggle(id); };
   $('#fieldToggle').onclick = () => { S.fieldView = !S.fieldView; save(); renderGame(); };
   $('#pushBtn').onclick = pushAttendance;
   $('#sheetUrl').onchange = (e) => { S.sheetUrl = e.target.value.trim(); save(); render(); };
@@ -1369,6 +1596,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (added) { $('#bulkInput').value = ''; save(); render(); toast('Added ' + added + ' player' + (added === 1 ? '' : 's')); }
   };
   $('#loadTeamBtn').onclick = loadTeamRoster;
+  $('#fitPos').onchange = renderFitBoard;
   $('#newUnitBtn').onclick = () => openUnitEditor(null, lineupIds());
   $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('chart'); $('#chartDlg').showModal(); };
   $('#rosterScanBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('roster'); $('#chartDlg').showModal(); };
