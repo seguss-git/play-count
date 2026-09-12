@@ -292,6 +292,7 @@
         <input id="bulkInput" placeholder="12 Jack, 7 Owen, 22 Liam ..." class="grow">
         <button class="btn" id="bulkBtn">Import</button>
       </div>
+      <div class="row" style="margin-top:6px"><button class="btn small" id="rosterScanBtn">Scan or upload a photo of a roster</button></div>
     </div>
     <div class="card">
       <h2>Roster <span class="muted plain" id="rosterCount"></span></h2>
@@ -376,11 +377,15 @@
   </div>
 </dialog>
 <dialog id="chartDlg">
-  <h2 style="margin:0 0 6px;font-size:16px">Import unit chart</h2>
-  <p class="muted small" style="margin:0 0 8px">One row per unit, first row holds the positions. <b>Pasting from your spreadsheet is the reliable way.</b> Scanning a photo is a rough shortcut: gridlines and shadows confuse it badly, so read every name before importing.</p>
+  <h2 style="margin:0 0 6px;font-size:16px" id="impTitle">Import</h2>
+  <div class="seg" id="impSeg" style="margin:0 0 8px">
+    <button data-imp="chart">Unit chart</button>
+    <button data-imp="roster">Player names</button>
+  </div>
+  <p class="muted small" style="margin:0 0 8px" id="impHint"></p>
   <div class="row wrap" style="margin-bottom:8px">
-    <button class="btn small" id="chartScanBtn">Scan a photo</button>
-    <input type="file" id="chartFile" accept="image/*" capture="environment" style="display:none">
+    <button class="btn small" id="chartScanBtn">Scan or upload a photo</button>
+    <input type="file" id="chartFile" accept="image/*" style="display:none">
     <span class="muted small grow" style="text-align:right" id="chartStatus"></span>
   </div>
   <textarea id="chartText" rows="7" spellcheck="false" placeholder="UNIT, L-CB, L-DE, L-DT
@@ -433,6 +438,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     units: [],           // {id, name, members:[playerId], pos:{playerId:'QB'}} e.g. Hawk, Viper
     activeUnitId: null,  // unit last sent out, used to label positions on the field
     fieldView: false,    // show the formation diagram instead of the list
+    impMode: 'chart',    // import dialog: 'chart' or 'roster'
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
     selectedEventId: null,
@@ -807,6 +813,79 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     });
     return { rows: order.map(n => byName[n]).filter(r => r.picks.length), problems: problems };
   }
+
+  // Reads a list of players: "12 Jack Smith", "Jack, Smith, White, Y", one per line.
+  function parseRoster(text) {
+    const rows = []; const skipped = [];
+    String(text).split(/\r?\n/).forEach(line => {
+      line = line.trim(); if (!line) return;
+      let cells = splitCells(line).filter(c => c !== '');
+      if (cells.length === 1) {
+        const m = cells[0].match(/^#?(\d{1,2})\s+(.+)$/);
+        if (m) cells = [m[1], m[2]];
+      }
+      cells = cells.filter(c => !/^(y|n|x|yes|no|present|absent)$/i.test(c));
+      let team = null;
+      cells = cells.filter(c => {
+        if (/^white$/i.test(c)) { team = 'White'; return false; }
+        if (/^blue$/i.test(c)) { team = 'Blue'; return false; }
+        return true;
+      });
+      let num = '';
+      cells = cells.filter(c => {
+        if (!num && /^#?\d{1,2}$/.test(c)) { num = c.replace('#', ''); return false; }
+        return true;
+      });
+      const name = cells.join(' ').replace(/\s+/g, ' ').trim();
+      if (!name) return;
+      if (!/[a-zA-Z]{2}/.test(name)) { skipped.push(line); return; }
+      if (/first name|last name|player|jersey|^team$|^unit$|^name$/i.test(name)) return;
+      rows.push({ num: num, name: name, team: team });
+    });
+    return { rows: rows, skipped: skipped };
+  }
+  function renderRosterPreview() {
+    const res = parseRoster($('#chartText').value);
+    const box = $('#chartPreview');
+    const fresh = res.rows.filter(r => !S.roster.some(p => p.name.toLowerCase() === r.name.toLowerCase()));
+    $('#chartImport').disabled = !fresh.length;
+    if (!res.rows.length) { box.innerHTML = '<span class="muted">Nothing recognised yet.</span>'; return; }
+    const dupes = res.rows.length - fresh.length;
+    box.innerHTML = ['White', 'Blue'].map(t => {
+      const list = fresh.filter(r => (r.team || S.rosterTeam) === t);
+      if (!list.length) return '';
+      return '<div style="margin-bottom:6px"><b>' + t + '</b> <span class="muted">' + list.length + ' new</span><br>' +
+        '<span class="muted">' + esc(list.map(r => (r.num ? r.num + ' ' : '') + r.name).join(', ')) + '</span></div>';
+    }).join('') +
+      (dupes ? '<div class="muted">' + dupes + ' already on the roster, skipped.</div>' : '') +
+      (res.skipped.length ? '<div style="color:var(--red)">Ignored: ' + esc(res.skipped.slice(0, 6).join(' / ')) + '</div>' : '');
+  }
+  function applyRoster() {
+    const res = parseRoster($('#chartText').value);
+    let added = 0;
+    res.rows.forEach(r => {
+      if (S.roster.some(p => p.name.toLowerCase() === r.name.toLowerCase())) return;
+      if (addPlayer(r.num, r.name, r.team || S.rosterTeam)) added++;
+    });
+    save(); render();
+    toast(added ? 'Added ' + added + ' player' + (added === 1 ? '' : 's') : 'Nothing new to add');
+  }
+  function setImpMode(m) {
+    S.impMode = m; save();
+    document.querySelectorAll('#impSeg button').forEach(b => b.classList.toggle('active', b.dataset.imp === m));
+    $('#impTitle').textContent = m === 'chart' ? 'Import unit chart' : 'Import player names';
+    $('#impHint').innerHTML = m === 'chart'
+      ? 'One row per unit, first row holds the positions. <b>Pasting from your spreadsheet is the reliable way.</b>'
+      : 'One player per line, for example <code>12 Jack Smith</code>. A White or Blue column is used to place them; otherwise they join the team shown on the Roster tab.';
+    $('#chartText').placeholder = m === 'chart'
+      ? 'UNIT, L-CB, L-DE, L-DT\nHAWK, Mohamed, Sokolik, McAnany'
+      : '12 Jack Smith\n7 Owen Jones\nLiam Brown';
+    renderImportPreview();
+  }
+  function renderImportPreview() {
+    if (S.impMode === 'roster') renderRosterPreview(); else renderChartPreview();
+  }
+
   function renderChartPreview() {
     const res = parseChart($('#chartText').value);
     const box = $('#chartPreview');
@@ -842,19 +921,46 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       document.head.appendChild(s);
     });
   }
+  // Shrink before sending or scanning: faster, and small enough to post.
+  function shrinkImage(file, maxSide) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const f = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * f); c.height = Math.round(img.height * f);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('could not read that image')); };
+      img.src = url;
+    });
+  }
   async function scanPhoto(file) {
     const st = $('#chartStatus');
     try {
-      st.textContent = 'Loading scanner...';
-      if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
-      st.textContent = 'Reading photo...';
-      const r = await window.Tesseract.recognize(file, 'eng', {
-        logger: (m) => { if (m.status === 'recognizing text') st.textContent = 'Reading photo ' + Math.round(m.progress * 100) + '%'; }
-      });
-      const text = (r.data.text || '').split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 2).join('\n');
+      st.textContent = 'Preparing photo...';
+      const dataUrl = await shrinkImage(file, 1800);
+      let text = '';
+      if (S.sheetUrl) {
+        st.textContent = 'Reading with Google...';
+        const res = await postToSheet({ kind: 'ocr', image: dataUrl.split(',')[1], mime: 'image/jpeg' });
+        text = res.text || '';
+      }
+      if (!text) {
+        st.textContent = S.sheetUrl ? 'Falling back to the basic scanner...' : 'Loading the basic scanner...';
+        if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+        const r = await window.Tesseract.recognize(dataUrl, 'eng', {
+          logger: (m) => { if (m.status === 'recognizing text') st.textContent = 'Reading ' + Math.round(m.progress * 100) + '%'; }
+        });
+        text = r.data.text || '';
+      }
+      text = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 2).join('\n');
       $('#chartText').value = text;
-      renderChartPreview();
-      st.textContent = text ? 'Scan done, check it below' : 'Nothing readable found';
+      renderImportPreview();
+      st.textContent = text ? 'Scan done. Check every name before importing.' : 'Nothing readable found';
     } catch (e) {
       st.textContent = 'Scan failed. Paste the rows instead.';
     }
@@ -1086,7 +1192,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const txt = await r.text();
       let out = null;
       try { out = JSON.parse(txt); } catch (err) { /* not json */ }
-      if (out && out.ok === false) return { ok: false, msg: out.error || 'the script reported an error' };
+      if (out && out.ok === false) return { ok: false, text: '', msg: out.error || 'the script reported an error' };
+      if (out && out.ok && typeof out.text === 'string') return { ok: true, text: out.text, msg: 'read ' + out.text.length + ' characters' };
       if (out && out.ok) {
         const bits = [];
         if (out.sheet) bits.push('tab "' + out.sheet + '"');
@@ -1207,12 +1314,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   };
   $('#loadTeamBtn').onclick = loadTeamRoster;
   $('#newUnitBtn').onclick = () => openUnitEditor(null, lineupIds());
-  $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; renderChartPreview(); $('#chartDlg').showModal(); };
-  $('#chartText').oninput = renderChartPreview;
+  $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('chart'); $('#chartDlg').showModal(); };
+  $('#rosterScanBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('roster'); $('#chartDlg').showModal(); };
+  document.querySelectorAll('#impSeg button').forEach(b => b.onclick = () => setImpMode(b.dataset.imp));
+  $('#chartText').oninput = renderImportPreview;
   $('#chartScanBtn').onclick = () => $('#chartFile').click();
   $('#chartFile').onchange = (e) => { const f = e.target.files[0]; if (f) scanPhoto(f); e.target.value = ''; };
   $('#chartCancel').onclick = () => $('#chartDlg').close();
-  $('#chartImport').onclick = () => { applyChart(); $('#chartDlg').close(); $('#chartText').value = ''; };
+  $('#chartImport').onclick = () => { if (S.impMode === 'roster') applyRoster(); else applyChart(); $('#chartDlg').close(); $('#chartText').value = ''; };
   $('#unitFromLineup').onclick = () => { if (draft) { draft.members = lineupIds().slice(); renderUnitDraft(); } };
   $('#unitNone').onclick = () => { if (draft) { draft.members = []; renderUnitDraft(); } };
   $('#unitCancel').onclick = () => { $('#unitDlg').close(); draft = null; };

@@ -7,6 +7,12 @@
  * You should not need to configure anything. The script looks through every tab
  * for a header row containing "Last Name" and uses that one.
  *
+ * OPTIONAL: photo scanning
+ *  The app can send a photo here to be read by Google's own text recognition, which
+ *  is far better than anything a phone browser can do on its own. To switch it on,
+ *  in the Apps Script editor click Services (+), add "Drive API", and Save. Without
+ *  that step everything else still works; the app just falls back to its basic scanner.
+ *
  * SETUP
  *  1. Open your attendance spreadsheet.
  *  2. Extensions -> Apps Script. Delete everything in Code.gs and paste this file. Save.
@@ -32,6 +38,7 @@ var ABSENT_MARK = '';    // written for a player who was not
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
+    if (data.kind === 'ocr') return json(readImage(data));
     if (!data.rows || !data.rows.length) return json(describe());
     return json(writeAttendance(data));
   } catch (err) {
@@ -169,6 +176,30 @@ function writeAttendance(data) {
     column: label,
     sheet: t.sh.getName()
   };
+}
+
+/**
+ * Runs a photo through Google Drive's text recognition and returns the text.
+ * The temporary file is trashed straight afterwards.
+ */
+function readImage(data) {
+  if (typeof Drive === 'undefined') {
+    return { ok: false, error: 'Drive API service is not enabled in this script' };
+  }
+  var fileId = null;
+  try {
+    var blob = Utilities.newBlob(Utilities.base64Decode(data.image), data.mime || 'image/jpeg', 'playcount-scan');
+    var meta = { title: 'playcount-scan-temp', name: 'playcount-scan-temp' };
+    var opts = { ocr: true, ocrLanguage: 'en' };
+    var file = Drive.Files.insert ? Drive.Files.insert(meta, blob, opts) : Drive.Files.create(meta, blob, opts);
+    fileId = file.id;
+    var text = DocumentApp.openById(fileId).getBody().getText();
+    return { ok: true, text: text };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  } finally {
+    if (fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e2) {} }
+  }
 }
 
 function parseIsoDate(s) {
