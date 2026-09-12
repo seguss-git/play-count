@@ -473,7 +473,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.11';
+  const APP_VERSION = '2026.09.12.12';
   // Shared team database. Baked in once the project exists; Settings can override.
   const SYNC_URL = '';
   const SYNC_KEY = '';
@@ -492,6 +492,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     'Christian Strand', 'Theodore Walker', 'Alexander Jack Willcocks', 'Henry Wood'];
   // Corrections to apply on phones that installed an earlier roster.
   var SEED_MOVES = [{ name: 'Henry Wood', team: 'Blue' }];
+  // Unit names the coaches actually use. Misspellings are corrected, missing ones are created empty.
+  var UNIT_NAMES = ['HAWK', 'VIPER', 'HAMMER', 'MIXED'];
+  var UNIT_FIXES = { MEXED: 'MIXED', MIX: 'MIXED' };
   // [lastName, size, speed, agility, power] as percentile ranks across the grade.
   // Derived from the combine sheet. Raw weights and times are deliberately not shipped.
   var ATHLETE = [
@@ -623,6 +626,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       S.lineup = S.lineup.filter(i => i !== pl.id);
       S.events.forEach(e => { if (e.type === 'game' && eventTeam(e) !== mv.team) e.present = e.present.filter(i => i !== pl.id); });
       S.units.forEach(u => { u.members = u.members.filter(i => i !== pl.id); if (u.pos) delete u.pos[pl.id]; });
+    });
+    S.units.forEach(u => {
+      const fixed = UNIT_FIXES[String(u.name || '').trim().toUpperCase()];
+      if (fixed && u.name !== fixed) { u.name = fixed; touched = true; }
+    });
+    UNIT_NAMES.forEach(n => {
+      if (!S.units.some(u => (u.team || 'White') === 'White' && String(u.name).trim().toUpperCase() === n)) {
+        S.units.push({ id: uid(), name: n, team: 'White', members: [], pos: {}, layout: {} }); touched = true;
+      }
     });
     S.roster.forEach(pl => {
       if (teamOf(pl) !== 'White' || (pl.num !== '' && pl.num != null)) return;
@@ -1588,6 +1600,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function loadUnit(id) {
     const u = S.units.find(x => x.id === id), g = curGame();
     if (!u || !g) return;
+    if (!u.members.length) { toast(u.name + ' has no players yet. Add them on the Roster tab.'); return; }
     S.lineup = u.members.filter(pid => g.present.includes(pid));
     S.activeUnitId = u.id;
     save(); renderHeader(); renderGame();
