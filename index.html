@@ -380,6 +380,13 @@
       <div class="row wrap"><button class="btn small" id="checkUpdBtn">Check for update now</button><span class="muted small grow" id="updStatus"></span></div>
     </div>
     <div class="card">
+      <h2>Team sync</h2>
+      <p class="muted small" style="margin:0 0 6px">One shared game for every coach. Once connected, this phone and every other one see the same counts, attendance and roster. Works with no signal and catches up when it returns.</p>
+      <input id="syncUrl" placeholder="https://xxxx.supabase.co" autocomplete="off">
+      <input id="syncKey" placeholder="anon key" autocomplete="off" style="margin-top:6px">
+      <div class="row" style="margin-top:8px"><button class="btn small" id="syncNowBtn">Sync now</button><span class="muted small grow" id="syncStatus"></span></div>
+    </div>
+    <div class="card">
       <h2>Google Sheet</h2>
       <p class="muted small" style="margin:0 0 6px">Paste the web app link from the Apps Script you deployed on your attendance sheet. Attendance then posts straight into it. The link is stored on this device only.</p>
       <input id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
@@ -458,7 +465,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.9';
+  const APP_VERSION = '2026.09.12.10';
+  // Shared team database. Baked in once the project exists; Settings can override.
+  const SYNC_URL = '';
+  const SYNC_KEY = '';
+  let lastCfgHash = '';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -574,7 +585,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (id && ids.indexOf(id) < 0) ids.push(id);
       });
       if (!ids.length) return;
-      S.events.push({ id: uid(), type: 'practice', date: date, opponent: '', present: ids, plays: [] });
+      S.events.push({ id: uid() + uid(), type: 'practice', date: date, opponent: '', present: ids, plays: [], rows: [] });
       made++;
     });
     return made > 0;
@@ -648,6 +659,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     focus: false,        // hide everything on the Game tab except the field and the button
     impMode: 'chart',    // import dialog: 'chart' or 'roster'
     subSort: 'chart',    // how the substitute list is ordered
+    deviceId: '',        // this phone, so shared play rows know who counted them
+    outbox: [],          // rows waiting to reach the shared database
+    syncSince: {},       // last server timestamp seen per table
+    syncBootstrapped: false,
+    syncUrl: '', syncKey: '',
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
     selectedEventId: null,
@@ -664,13 +680,19 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (st.team !== 'White' && st.team !== 'Blue') st.team = 'White';
         if (st.rosterTeam !== 'White' && st.rosterTeam !== 'Blue') st.rosterTeam = st.team;
         if (saved.minRule !== 14) { st.minPlays = 14; st.minRule = 14; }   // league rule, applied once to older installs
+        if (!st.deviceId) st.deviceId = uid() + uid();
+        st.events.forEach(e => {
+          if (!e.rows) e.rows = (e.plays || []).map((pl, i) => ({ id: uid() + uid(), players: pl.slice(), dev: st.deviceId, seq: i, t: 0, del: false }));
+          e.plays = e.rows.filter(r => !r.del).map(r => r.players.slice());
+        });
         return st;
       }
       const old = localStorage.getItem(OLD_KEY);
       if (old) return migrate(JSON.parse(old));
     } catch (e) { console.warn('load failed', e); }
-    return defaults();
+    const fresh = defaults(); fresh.deviceId = uid() + uid(); return fresh;
   }
+  function syncPlaysView(e) { e.plays = (e.rows || []).filter(r => !r.del).map(r => r.players.slice()); }
   function applyLink() {
     const w = rosterFromLink('r'), b = rosterFromLink('b');
     if (!w && !b) return;
@@ -690,11 +712,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     s.team = o.team || s.team; s.minPlays = o.minPlays ?? s.minPlays; s.fieldSize = o.fieldSize || s.fieldSize;
     s.roster = (o.roster || []).map(p => ({ id: p.id, num: p.num ?? '', name: p.name }));
     const activeIds = (o.roster || []).filter(p => p.active !== false).map(p => p.id);
-    s.events = (o.games || []).map(g => ({ id: g.id, type: 'game', date: g.date, opponent: g.opponent || '', present: activeIds.slice(), plays: g.plays || [] }));
+    s.events = (o.games || []).map(g => ({ id: g.id, type: 'game', date: g.date, opponent: g.opponent || '', present: activeIds.slice(), plays: g.plays || [], rows: [] }));
     s.currentGameId = o.currentGameId || null; s.lineup = o.lineup || [];
     return s;
   }
-  function save() { localStorage.setItem(KEY, JSON.stringify(S)); }
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify(S));
+    const h = JSON.stringify([S.roster, S.units]);
+    if (h !== lastCfgHash) { lastCfgHash = h; if (S.syncBootstrapped && typeof syncOn === 'function' && syncOn()) enqueueConfig(); }
+  }
 
   const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
   const ev = (id) => S.events.find(e => e.id === id) || null;
@@ -735,9 +761,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function evLabel(e) { return e.type === 'game' ? 'vs ' + (e.opponent || 'TBD') : 'Practice'; }
   function addEvent(type, date, opponent) {
     const pool = type === 'practice' ? S.roster : gameRoster();
-    const e = { id: uid(), type: type, date: date || today(), opponent: (opponent || '').trim(), present: pool.map(p => p.id), plays: [] };
+    const e = { id: uid() + uid(), type: type, date: date || today(), opponent: (opponent || '').trim(), present: pool.map(p => p.id), plays: [], rows: [] };
     if (type === 'game') e.team = S.team;
     S.events.push(e);
+    pushEvent(e); pushAllAttendance(e);
     return e;
   }
 
@@ -789,7 +816,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         ? 'There are no players on the roster yet.<br><br><button class="btn small" id="goRosterBtn">Add the team</button>'
         : 'Nobody is marked present for this game.<br><br><button class="btn small" id="allPresentBtn">Mark everyone present</button>') + '</div>';
       if (noRoster) $('#goRosterBtn').onclick = () => showView('roster');
-      else $('#allPresentBtn').onclick = () => { g.present = gameRoster().map(p => p.id); save(); render(); toast('Everyone marked present'); };
+      else $('#allPresentBtn').onclick = () => { g.present = gameRoster().map(p => p.id); pushAllAttendance(g); save(); render(); toast('Everyone marked present'); };
     }
     ros.forEach(p => {
       const n = numStr(p), parts = p.name.trim().split(/\s+/);
@@ -824,10 +851,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const offField = presentRoster(g).filter(p => S.lineup.indexOf(p.id) < 0)
       .sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b)).slice(0, 3);
     const under = presentRoster(g).filter(p => counts[p.id] < S.minPlays).length;
-    $('#needLine').innerHTML = g.plays.length && offField.length
+    const recentDevs = {};
+    (g.rows || []).forEach(r => { if (!r.del && r.t && Date.now() - r.t < 90000) recentDevs[r.dev || '?'] = 1; });
+    const multi = Object.keys(recentDevs).length > 1 ? '<div style="color:var(--red);font-weight:700;margin-bottom:4px">Two phones are counting this game. Counts will double.</div>' : '';
+    $('#needLine').innerHTML = multi + (g.plays.length && offField.length
       ? '<span style="color:var(--amber)">Next in:</span> ' + esc(offField.map(p => lastName(p) + ' ' + counts[p.id]).join(' · ')) +
         (under ? ' <span style="color:var(--red)">· ' + under + ' under ' + S.minPlays + '</span>' : '')
-      : '';
+      : '');
     $('#recordBtn').disabled = n === 0;
     $('#recordBtn').textContent = 'Record Play ' + (g.plays.length + 1);
     $('#undoBtn').disabled = g.plays.length === 0;
@@ -1378,6 +1408,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const open = row.querySelector('.open'); if (open) open.onclick = () => openGame(e.id);
       row.querySelector('.del').onclick = () => ask('Delete ' + evLabel(e) + ' on ' + fmtDate(e.date) + (e.plays.length ? ' and its ' + e.plays.length + ' plays' : '') + '?', () => {
         S.events = S.events.filter(x => x.id !== e.id);
+        pushEventDeleted(e);
         if (S.currentGameId === e.id) S.currentGameId = null;
         if (S.selectedEventId === e.id) S.selectedEventId = null;
         save(); render();
@@ -1411,6 +1442,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           row.onclick = () => {
             if (here) sel.present = sel.present.filter(i => i !== p.id); else sel.present.push(p.id);
             if (here && sel.id === S.currentGameId) S.lineup = S.lineup.filter(i => i !== p.id);
+            pushAttendanceRow(sel, p.id, !here);
             save(); render();
           };
           al.appendChild(row);
@@ -1470,6 +1502,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     document.querySelectorAll('#teamSeg button').forEach(b => b.classList.toggle('active', b.dataset.team === S.team));
     $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
     $('#verLine').textContent = 'Version ' + APP_VERSION + (navigator.onLine ? '' : ' · offline');
+    if (document.activeElement !== $('#syncUrl')) $('#syncUrl').value = S.syncUrl || SYNC_URL;
+    if (document.activeElement !== $('#syncKey')) $('#syncKey').value = S.syncKey || SYNC_KEY;
+    $('#syncStatus').textContent = syncStatusText();
     if (document.activeElement !== $('#sheetUrl')) $('#sheetUrl').value = S.sheetUrl || '';
     $('#pushBtn').style.display = S.sheetUrl ? '' : 'none';
     const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
@@ -1490,20 +1525,29 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function recordPlay() {
     const g = curGame(); if (!g) return;
     const ids = lineupIds(); if (!ids.length) return;
-    g.plays.push(ids);
+    addPlayRow(g, ids);
     save(); render();
     if (navigator.vibrate) navigator.vibrate(30);
     toast('Play ' + g.plays.length + ' recorded');
   }
+  function addPlayRow(g, ids) {
+    if (!g.rows) g.rows = [];
+    const row = { id: uid() + uid(), players: ids.slice(), dev: S.deviceId, seq: g.rows.length, t: Date.now(), del: false };
+    g.rows.push(row); syncPlaysView(g); pushPlay(g, row);
+    return row;
+  }
   function tapPlay(id) {
     const g = curGame(); if (!g) return;
-    g.plays.push([id]);
+    addPlayRow(g, [id]);
     save(); renderHeader(); renderGame(); renderCounts(); renderSettings();
     if (navigator.vibrate) navigator.vibrate(20);
   }
   function undo() {
     const g = curGame(); if (!g || !g.plays.length) return;
-    const last = g.plays.pop();
+    const live = (g.rows || []).filter(r => !r.del);
+    const row = live[live.length - 1];
+    row.del = true; syncPlaysView(g); pushPlay(g, row);
+    const last = row.players;
     if (S.mode === 'lineup') S.lineup = last.slice();
     save(); render(); toast(S.mode === 'tap' ? 'Undid ' + (player(last[0]) ? player(last[0]).name : 'last tap') : 'Undid last play');
   }
@@ -1547,6 +1591,155 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     let added = 0;
     (t === 'White' ? S.template : S.templateB).forEach(n => { if (!have.has(n.toLowerCase())) { addPlayer('', n, t); added++; } });
     save(); render(); toast(added ? 'Added ' + added + ' player' + (added === 1 ? '' : 's') : 'Roster already loaded');
+  }
+
+  // ---------- shared team database ----------
+  const PKS = { djfl_config: ['key'], djfl_events: ['id'], djfl_attendance: ['event_id', 'player_id'], djfl_plays: ['id'] };
+  const TABLES = ['djfl_config', 'djfl_events', 'djfl_attendance', 'djfl_plays'];
+  let syncTimer = null, syncing = false, lastSyncAt = 0, syncErr = '';
+  function syncCfg() { return { url: String(S.syncUrl || SYNC_URL).replace(/\/+$/, ''), key: S.syncKey || SYNC_KEY }; }
+  function syncOn() { const c = syncCfg(); return !!(c.url && c.key); }
+  function enqueue(table, row) { S.outbox.push({ table: table, row: row }); localStorage.setItem(KEY, JSON.stringify(S)); scheduleSync(400); }
+  function enqueueConfig() {
+    enqueue('djfl_config', { key: 'roster', data: S.roster });
+    enqueue('djfl_config', { key: 'units', data: S.units });
+  }
+  function pushEvent(e) {
+    if (!syncOn()) return;
+    enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: (typeof e.half === 'number') ? e.half : null, deleted: false });
+  }
+  function pushEventDeleted(e) { if (syncOn()) enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: null, deleted: true }); }
+  function pushAttendanceRow(e, playerId, present) { if (syncOn()) enqueue('djfl_attendance', { event_id: e.id, player_id: playerId, present: !!present }); }
+  function pushAllAttendance(e) { if (!syncOn()) return; poolFor(e).forEach(pl => enqueue('djfl_attendance', { event_id: e.id, player_id: pl.id, present: e.present.indexOf(pl.id) >= 0 })); }
+  function pushPlay(g, row) { if (syncOn()) enqueue('djfl_plays', { id: row.id, game_id: g.id, players: row.players, device: row.dev || S.deviceId, seq: row.seq || 0, deleted: !!row.del }); }
+  function pushEverything() {
+    enqueueConfig();
+    S.events.forEach(e => { pushEvent(e); pushAllAttendance(e); (e.rows || []).forEach(r => pushPlay(e, r)); });
+  }
+  function scheduleSync(ms) { if (!syncOn()) return; clearTimeout(syncTimer); syncTimer = setTimeout(runSync, ms || 0); }
+  async function api(path, opts) {
+    const c = syncCfg();
+    const h = Object.assign({ apikey: c.key, Authorization: 'Bearer ' + c.key, 'Content-Type': 'application/json' }, (opts && opts.headers) || {});
+    const r = await fetch(c.url + '/rest/v1/' + path, Object.assign({}, opts, { headers: h }));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return (r.status === 204 || r.status === 201) ? null : r.json();
+  }
+  function dedupe(t, rows) { const m = {}; rows.forEach(r => { m[PKS[t].map(k => r[k]).join('|')] = r; }); return Object.keys(m).map(k => m[k]); }
+  async function flushOutbox() {
+    const groups = {};
+    S.outbox.forEach(o => { (groups[o.table] = groups[o.table] || []).push(o.row); });
+    for (const t of TABLES) {
+      if (!groups[t]) continue;
+      const q = t + '?on_conflict=' + PKS[t].join(',');
+      await api(q, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(dedupe(t, groups[t])) });
+    }
+    S.outbox = [];
+    localStorage.setItem(KEY, JSON.stringify(S));
+  }
+  async function pullTable(t, since) {
+    const q = t + '?select=*&order=updated_at.asc&limit=1000' + (since ? '&updated_at=gt.' + encodeURIComponent(since) : '');
+    return api(q, { method: 'GET' });
+  }
+  function applyRemote(t, rows) {
+    let changed = false;
+    if (t === 'djfl_config') {
+      rows.forEach(r => {
+        if (r.key === 'roster' && Array.isArray(r.data) && JSON.stringify(r.data) !== JSON.stringify(S.roster)) { S.roster = r.data; changed = true; }
+        if (r.key === 'units' && Array.isArray(r.data) && JSON.stringify(r.data) !== JSON.stringify(S.units)) { S.units = r.data; changed = true; }
+      });
+      if (changed) lastCfgHash = JSON.stringify([S.roster, S.units]);
+    } else if (t === 'djfl_events') {
+      rows.forEach(r => {
+        const i = S.events.findIndex(e => e.id === r.id);
+        if (r.deleted) {
+          if (i >= 0) { S.events.splice(i, 1); changed = true; }
+          if (S.currentGameId === r.id) { S.currentGameId = null; S.lineup = []; }
+          if (S.selectedEventId === r.id) S.selectedEventId = null;
+          return;
+        }
+        if (i < 0) {
+          S.events.push({ id: r.id, type: r.type, team: r.team || undefined, date: r.date, opponent: r.opponent || '', present: [], plays: [], rows: [], half: (r.half == null ? undefined : r.half) });
+          changed = true;
+        } else {
+          const e = S.events[i];
+          if (e.date !== r.date || (e.opponent || '') !== (r.opponent || '') || e.type !== r.type) changed = true;
+          e.date = r.date; e.opponent = r.opponent || ''; e.type = r.type; if (r.team) e.team = r.team;
+          const nh = (r.half == null ? undefined : r.half);
+          if (e.half !== nh) { if (nh === undefined) delete e.half; else e.half = nh; changed = true; }
+        }
+      });
+    } else if (t === 'djfl_attendance') {
+      rows.forEach(r => {
+        const e = S.events.find(x => x.id === r.event_id); if (!e) return;
+        const has = e.present.indexOf(r.player_id) >= 0;
+        if (r.present && !has) { e.present.push(r.player_id); changed = true; }
+        if (!r.present && has) { e.present = e.present.filter(i => i !== r.player_id); changed = true; if (S.currentGameId === e.id) S.lineup = S.lineup.filter(i => i !== r.player_id); }
+      });
+    } else if (t === 'djfl_plays') {
+      const touched = {};
+      rows.forEach(r => {
+        const g = S.events.find(x => x.id === r.game_id); if (!g) return;
+        if (!g.rows) g.rows = [];
+        const local = { id: r.id, players: Array.isArray(r.players) ? r.players : [], dev: r.device || '', seq: r.seq || 0, t: Date.parse(r.created_at) || 0, del: !!r.deleted };
+        const i = g.rows.findIndex(x => x.id === r.id);
+        if (i < 0) { g.rows.push(local); changed = true; }
+        else if (JSON.stringify(g.rows[i]) !== JSON.stringify(local)) { g.rows[i] = local; changed = true; }
+        touched[g.id] = g;
+      });
+      Object.keys(touched).forEach(k => { const g = touched[k]; g.rows.sort((a, b) => (a.t - b.t) || (a.seq - b.seq)); syncPlaysView(g); });
+    }
+    return changed;
+  }
+  async function runSync() {
+    if (!syncOn() || syncing) return false;
+    syncing = true; syncErr = '';
+    let changed = false;
+    try {
+      if (S.outbox.length) await flushOutbox();
+      const first = !S.syncBootstrapped;
+      let cfgSeen = false;
+      const serverEventIds = {};
+      for (const t of TABLES) {
+        const rows = await pullTable(t, S.syncSince[t]);
+        if (rows && rows.length) {
+          if (t === 'djfl_config') cfgSeen = true;
+          if (t === 'djfl_events') rows.forEach(r => { if (!r.deleted) serverEventIds[r.id] = 1; });
+          if (applyRemote(t, rows)) changed = true;
+          S.syncSince[t] = rows[rows.length - 1].updated_at;
+        }
+      }
+      if (first) {
+        S.syncBootstrapped = true;
+        if (!cfgSeen) { pushEverything(); await flushOutbox(); }
+        else {
+          const keep = [];
+          S.events.forEach(e => {
+            if (serverEventIds[e.id]) { keep.push(e); return; }
+            const counted = (e.rows || []).some(r => !r.del);
+            if (counted) { keep.push(e); pushEvent(e); pushAllAttendance(e); e.rows.forEach(r => pushPlay(e, r)); }
+            else if (S.currentGameId === e.id) { S.currentGameId = null; S.lineup = []; }
+          });
+          if (keep.length !== S.events.length) { S.events = keep; changed = true; }
+          if (S.selectedEventId && !S.events.some(e => e.id === S.selectedEventId)) S.selectedEventId = null;
+          if (S.outbox.length) await flushOutbox();
+        }
+        lastCfgHash = JSON.stringify([S.roster, S.units]);
+      }
+      lastSyncAt = Date.now();
+      localStorage.setItem(KEY, JSON.stringify(S));
+      if (changed) render(); else renderSettings();
+    } catch (e) {
+      syncErr = String(e && e.message ? e.message : e);
+      renderSettings();
+    } finally {
+      syncing = false;
+    }
+    return changed;
+  }
+  function syncStatusText() {
+    if (!syncOn()) return 'Not connected. Paste the project URL and key, or wait for the built-in ones.';
+    const when = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : 'never';
+    return 'Connected · last sync ' + when + (S.outbox.length ? ' · ' + S.outbox.length + ' waiting to send' : '') + (syncErr ? ' · problem: ' + syncErr : '');
   }
 
   // ---------- google sheet push ----------
@@ -1650,13 +1843,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#recordBtn').onclick = recordPlay;
   $('#undoBtn').onclick = undo;
   $('#clearSelBtn').onclick = () => { S.lineup = []; S.activeUnitId = null; save(); renderGame(); };
-  $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); save(); render(); } };
-  $('#dateEdit').onchange = (e) => { const g = curGame(); if (g && e.target.value) { g.date = e.target.value; save(); render(); } };
+  $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); pushEvent(g); save(); render(); } };
+  $('#dateEdit').onchange = (e) => { const g = curGame(); if (g && e.target.value) { g.date = e.target.value; pushEvent(g); save(); render(); } };
   $('#halfBtn').onclick = () => {
     const g = curGame(); if (!g) return;
     if (typeof g.half === 'number') { delete g.half; toast('Halftime marker removed'); }
     else { g.half = g.plays.length; toast('Halftime after play ' + g.half); }
-    save(); render();
+    pushEvent(g); save(); render();
   };
   $('#endGameBtn').onclick = () => { S.currentGameId = null; S.lineup = []; save(); render(); };
 
@@ -1666,7 +1859,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     S.selectedEventId = e.id; $('#evOpp').value = ''; save(); render();
     toast((e.type === 'game' ? 'Game' : 'Practice') + ' added for ' + fmtDate(e.date));
   };
-  $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = poolFor(e).map(p => p.id); save(); render(); } };
+  $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = poolFor(e).map(p => p.id); pushAllAttendance(e); save(); render(); } };
   document.querySelectorAll('#rosterSeg button').forEach(b => b.onclick = () => { S.rosterTeam = b.dataset.team; save(); render(); });
   document.querySelectorAll('#subSeg button').forEach(b => b.onclick = () => {
     S.subSort = b.dataset.sort; save();
@@ -1677,6 +1870,21 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#fieldToggle').onclick = () => { S.fieldView = !S.fieldView; save(); renderGame(); };
   $('#focusBtn').onclick = () => { S.focus = !S.focus; save(); renderGame(); };
   $('#pushBtn').onclick = pushAttendance;
+  const syncCfgChanged = () => {
+    const u = $('#syncUrl').value.trim(), k = $('#syncKey').value.trim();
+    if (u !== (S.syncUrl || '') || k !== (S.syncKey || '')) { S.syncUrl = u; S.syncKey = k; S.syncSince = {}; S.syncBootstrapped = false; save(); scheduleSync(300); }
+  };
+  $('#syncUrl').onchange = syncCfgChanged;
+  $('#syncKey').onchange = syncCfgChanged;
+  $('#syncNowBtn').onclick = async () => { $('#syncStatus').textContent = 'Syncing...'; await runSync(); renderSettings(); };
+  setInterval(() => {
+    if (!syncOn()) return;
+    const busy = curGame() || $('#view-attend').classList.contains('active');
+    if (busy || Date.now() - lastSyncAt > 30000) runSync();
+  }, 5000);
+  window.addEventListener('online', () => scheduleSync(500));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(500); });
+  window.__djfl = { sync: runSync, state: () => S };
   $('#sheetUrl').onchange = (e) => { S.sheetUrl = e.target.value.trim(); save(); render(); };
   $('#sheetTestBtn').onclick = async () => {
     S.sheetUrl = $('#sheetUrl').value.trim(); save();
@@ -1686,7 +1894,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const res = await postToSheet({ kind: 'attendance', type: 'practice', date: today(), label: 'Test', team: S.team, rows: [] });
     st.textContent = res.ok ? 'Worked: ' + res.msg : 'Failed: ' + res.msg;
   };
-  $('#noneHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = []; if (e.id === S.currentGameId) S.lineup = []; save(); render(); } };
+  $('#noneHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = []; if (e.id === S.currentGameId) S.lineup = []; pushAllAttendance(e); save(); render(); } };
 
   $('#addForm').onsubmit = (e) => {
     e.preventDefault();
@@ -1767,6 +1975,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 
   seedDefaults();
   applyLink();
+  lastCfgHash = JSON.stringify([S.roster, S.units]);
+  scheduleSync(1500);
   // ---------- offline + updates ----------
   // The service worker caches the app so it opens with no signal. The page is always
   // fetched network-first, so a connection means the newest version. While the app is

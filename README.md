@@ -27,6 +27,21 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
 5. **Settings.** **My team** is a White or Blue switch that decides which team the game side belongs to. Games, play counts, units and the Counts tab all follow it, and each game and unit remembers the team that created it, so the two never mix. Practice attendance always covers both teams. That means either coach can use the same app and simply flip the switch. Also holds minimum plays per game and players on field. Season play totals. Backup and Restore move the data between phones.
    **Google Sheet.** Paste the web app link from `apps-script.gs` deployed on your attendance spreadsheet, then use Send a test row to check it. After that, Send to Sheet on the Attendance tab writes that session straight into your grid, finding or creating a column for the date and marking each player. Setup instructions are in the comments at the top of `apps-script.gs`.
 
+## Team sync: one shared game for every coach
+
+Without sync, each phone is its own island. With it, every coach sees the same counts, attendance, roster and units, live. It runs on a free Supabase project that you own.
+
+**One-time setup, about ten minutes:**
+
+1. Go to supabase.com, sign in, and create a new project. Any name, any region, set a database password and keep it somewhere.
+2. In the project, open the SQL editor, paste the contents of `supabase.sql` from this repository, and click Run. It creates four small tables and the permissions the app needs.
+3. Open Project Settings, then API. Copy the **Project URL** and the **anon public** key.
+4. Send those two values to whoever maintains this app so they can be built in, or paste them into Settings, Team sync, on each phone.
+
+**How it behaves.** Every change a phone makes goes into a local queue and is sent the moment there is signal. Every five seconds during a game, and every thirty otherwise, each phone pulls what the others sent. Plays are individual rows with an id and the phone that recorded them, so nothing is lost or double-counted by the sync itself. If two phones both record plays for the same game within ninety seconds, the Game tab shows a red warning, because that would double the counts. The rule is one counter per game; everyone else watches.
+
+The anon key is designed to be public. The database holds player names, attendance and play counts and nothing else.
+
 ## Offline and updates
 
 The app installs a service worker on first visit, so it opens with no signal and keeps working. The page itself is always fetched network-first with a four second timeout, so anyone with a connection gets the newest version on their next open, and anyone without one gets the copy from last time. While open, it checks for a new version every five minutes and whenever the network comes back. If nothing is in progress it reloads on its own; during a game it shows a bar at the top to tap when you are ready. The version number is at the bottom of Settings.
