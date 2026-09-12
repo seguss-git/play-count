@@ -303,15 +303,23 @@
 
   // No roster is stored in this file. It arrives once through a personal link ending in #r=...
   // and is then kept on the device. Names can also just be typed on the Roster tab.
+  // Accepts either a plain comma list (#r=John Smith,Fox Boyle) or base64 of one.
+  // A link chopped short by a messaging app still loads the names that survived.
   function rosterFromLink() {
-    const m = (location.hash || '').match(/[#&]r=([^&]*)/);
+    const m = ((location.hash || '') + '&' + (location.search || '')).match(/[#&?]r=([^&]+)/);
     if (!m) return null;
-    try {
-      const bin = atob(decodeURIComponent(m[1]).replace(/-/g, '+').replace(/_/g, '/'));
-      const txt = decodeURIComponent(Array.prototype.map.call(bin, c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-      const names = txt.split(',').map(s => s.trim()).filter(Boolean);
-      return names.length ? names : null;
-    } catch (e) { return null; }
+    let txt = m[1];
+    try { txt = decodeURIComponent(txt.replace(/\+/g, ' ')); } catch (e) { /* use raw */ }
+    if (txt.indexOf(',') < 0 && txt.indexOf(' ') < 0 && /^[A-Za-z0-9+/_=-]+$/.test(txt)) {
+      try {
+        const b = txt.replace(/-/g, '+').replace(/_/g, '/');
+        const bin = atob(b + '==='.slice(0, (4 - b.length % 4) % 4));
+        txt = decodeURIComponent(Array.prototype.map.call(bin, c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      } catch (e) { return null; }
+    }
+    if (/[^\x20-\x7E]/.test(txt)) return null;
+    const names = txt.split(',').map(s => s.trim()).filter(s => s && s.length < 40);
+    return names.length ? names : null;
   }
 
   // ---------- state ----------
@@ -430,8 +438,12 @@
     const grid = $('#playerGrid'); grid.innerHTML = '';
     const ros = presentRoster(g);
     if (!ros.length) {
-      grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Nobody is marked present for this game.<br><br><button class="btn small" id="allPresentBtn">Mark everyone present</button></div>';
-      $('#allPresentBtn').onclick = () => { g.present = S.roster.map(p => p.id); save(); render(); };
+      const noRoster = !S.roster.length;
+      grid.innerHTML = '<div class="empty" style="grid-column:1/-1">' + (noRoster
+        ? 'There are no players on the roster yet.<br><br><button class="btn small" id="goRosterBtn">Add the team</button>'
+        : 'Nobody is marked present for this game.<br><br><button class="btn small" id="allPresentBtn">Mark everyone present</button>') + '</div>';
+      if (noRoster) $('#goRosterBtn').onclick = () => showView('roster');
+      else $('#allPresentBtn').onclick = () => { g.present = S.roster.map(p => p.id); save(); render(); toast('Everyone marked present'); };
     }
     ros.forEach(p => {
       const n = numStr(p), parts = p.name.trim().split(/\s+/);
