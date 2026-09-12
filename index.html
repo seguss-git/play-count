@@ -46,6 +46,8 @@
     border-radius: 10px; padding: 10px 12px; font-size: 16px; min-height: 44px; width: 100%; }
   input[type=number] { width: 90px; }
   input[type=date] { width: auto; min-width: 150px; }
+  textarea { font: inherit; font-size: 14px; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px; width: 100%; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
   label.field { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
   .muted { color: var(--muted); } .small { font-size: 13px; }
   .hint { margin: 8px 4px; }
@@ -65,6 +67,9 @@
   .ubtn .c { font-weight: 400; font-size: 12px; opacity: .65; margin-left: 4px; }
   .ubtn.add { border-style: dashed; font-weight: 400; color: var(--muted); }
   .ulist .rrow b { font-size: 16px; }
+  .posin { width: 66px; text-align: center; min-height: 38px; padding: 4px 6px; font-size: 14px; flex: none; text-transform: uppercase; }
+  .chip .pos { font-size: 11px; font-weight: 800; letter-spacing: .06em; margin-top: 3px; color: var(--amber); }
+  .chip.on .pos { color: #92400e; }
 
   /* Player grid (game view) */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
@@ -262,7 +267,10 @@
       <h2>Units <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
       <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
       <div id="unitList" class="ulist"></div>
-      <button class="btn small" id="newUnitBtn" style="margin-top:10px">New unit</button>
+      <div class="row wrap" style="margin-top:10px">
+        <button class="btn small" id="newUnitBtn">New unit</button>
+        <button class="btn small" id="chartBtn">Import unit chart</button>
+      </div>
     </div>
   </section>
 
@@ -322,6 +330,23 @@
     <button class="btn primary grow" id="unitSave">Save unit</button>
   </div>
 </dialog>
+<dialog id="chartDlg">
+  <h2 style="margin:0 0 6px;font-size:16px">Import unit chart</h2>
+  <p class="muted small" style="margin:0 0 8px">One row per unit. The first row holds the positions. Paste straight from your spreadsheet, or scan a printed sheet and fix anything the scan gets wrong.</p>
+  <div class="row wrap" style="margin-bottom:8px">
+    <button class="btn small" id="chartScanBtn">Scan a photo</button>
+    <input type="file" id="chartFile" accept="image/*" capture="environment" style="display:none">
+    <span class="muted small grow" style="text-align:right" id="chartStatus"></span>
+  </div>
+  <textarea id="chartText" rows="7" spellcheck="false" placeholder="UNIT, L-CB, L-DE, L-DT
+HAWK, Mohamed, Sokolik, McAnany
+VIPER, Derrico, Sokolik, Pezley"></textarea>
+  <div id="chartPreview" class="small" style="max-height:32vh;overflow-y:auto;margin-top:8px"></div>
+  <div class="row" style="margin-top:12px">
+    <button class="btn grow" id="chartCancel">Cancel</button>
+    <button class="btn primary grow" id="chartImport">Import</button>
+  </div>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -357,7 +382,8 @@
     team: 'White', minPlays: 12, fieldSize: 11, mode: 'lineup',
     template: [],        // names from the personal link, used by the Load roster button
     roster: [],          // {id, num, name}
-    units: [],           // {id, name, members:[playerId]} e.g. Hawk, Viper
+    units: [],           // {id, name, members:[playerId], pos:{playerId:'QB'}} e.g. Hawk, Viper
+    activeUnitId: null,  // unit last sent out, used to label positions on the field
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
     selectedEventId: null,
@@ -468,6 +494,7 @@
     renderUnitRow(g, tap);
 
     const counts = countsFor(g);
+    const au = S.units.find(u => u.id === S.activeUnitId);
     const grid = $('#playerGrid'); grid.innerHTML = '';
     const ros = presentRoster(g);
     if (!ros.length) {
@@ -488,8 +515,10 @@
       } else {
         const on = S.lineup.includes(p.id);
         const big = n || parts[0], small = n ? p.name : parts.slice(1).join(' ');
+        const pos = (au && au.pos && on) ? (au.pos[p.id] || '') : '';
         b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
-        b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="big' + (n ? '' : ' txt') + '">' + esc(big) + '</span><span class="name">' + esc(small) + '</span>';
+        b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="big' + (n ? '' : ' txt') + '">' + esc(big) + '</span><span class="name">' + esc(small) + '</span>' +
+          (pos ? '<span class="pos">' + esc(pos) + '</span>' : '');
         b.onclick = () => toggle(p.id);
       }
       grid.appendChild(b);
@@ -542,7 +571,7 @@
       const row = document.createElement('div'); row.className = 'rrow';
       const who = u.members.map(id => player(id)).filter(Boolean);
       row.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span><br><span class="muted small">' +
-        (who.length ? esc(who.map(p => numStr(p) || p.name.split(/\s+/)[0]).join(', ')) : 'nobody yet') + '</span></span>' +
+        (who.length ? esc(who.map(p => ((u.pos && u.pos[p.id]) ? u.pos[p.id] + ' ' : '') + p.name.split(/\s+/).slice(-1)[0]).join(', ')) : 'nobody yet') + '</span></span>' +
         '<button class="btn small edit">Edit</button><button class="btn small danger del">✕</button>';
       row.querySelector('.edit').onclick = () => openUnitEditor(u.id, null);
       row.querySelector('.del').onclick = () => ask('Delete the ' + u.name + ' unit? Play counts are not affected.', () => {
@@ -555,7 +584,8 @@
   let draft = null;
   function openUnitEditor(id, preset) {
     const u = id ? S.units.find(x => x.id === id) : null;
-    draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice() };
+    draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice(),
+      pos: (u && u.pos) ? Object.assign({}, u.pos) : {} };
     $('#unitDlgTitle').textContent = u ? 'Edit unit' : 'New unit';
     $('#unitName').value = draft.name;
     $('#unitFromLineup').style.display = curGame() ? '' : 'none';
@@ -571,13 +601,125 @@
       const inU = draft.members.includes(p.id);
       const r = document.createElement('div');
       r.className = 'arow' + (inU ? ' here' : '');
-      r.innerHTML = '<span class="chk">' + (inU ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>';
+      r.innerHTML = '<span class="chk">' + (inU ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>' +
+        (inU ? '<input class="posin" placeholder="Pos" maxlength="6" value="' + esc(draft.pos[p.id] || '') + '">' : '');
       r.onclick = () => {
-        if (inU) draft.members = draft.members.filter(i => i !== p.id); else draft.members.push(p.id);
+        if (inU) { draft.members = draft.members.filter(i => i !== p.id); delete draft.pos[p.id]; }
+        else draft.members.push(p.id);
         renderUnitDraft();
       };
+      const pi = r.querySelector('.posin');
+      if (pi) {
+        pi.onclick = (e) => e.stopPropagation();
+        pi.oninput = (e) => { const v = e.target.value.trim().toUpperCase(); if (v) draft.pos[p.id] = v; else delete draft.pos[p.id]; };
+      }
       box.appendChild(r);
     });
+  }
+
+  // ---------- unit chart import ----------
+  function splitCells(line) {
+    if (line.indexOf('\t') >= 0) return line.split('\t').map(s => s.trim());
+    if (line.indexOf(',') >= 0) return line.split(',').map(s => s.trim());
+    return line.split(/\s{2,}/).map(s => s.trim());
+  }
+  function matchPlayer(txt) {
+    const t = String(txt).toLowerCase().replace(/[^a-z' ]/g, '').trim();
+    if (!t) return null;
+    const parts = (p) => p.name.toLowerCase().split(/\s+/);
+    const tries = [
+      (p) => p.name.toLowerCase() === t,
+      (p) => parts(p).slice(-1)[0] === t,
+      (p) => parts(p)[0] === t,
+      (p) => p.name.toLowerCase().indexOf(t) >= 0,
+      (p) => t.length > 3 && parts(p).slice(-1)[0].indexOf(t.slice(0, -1)) === 0
+    ];
+    for (let i = 0; i < tries.length; i++) {
+      const m = S.roster.filter(tries[i]);
+      if (m.length === 1) return m[0];
+    }
+    return null;
+  }
+  function parseChart(text) {
+    const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    let positions = null; const order = []; const byName = {}; const problems = [];
+    lines.forEach(line => {
+      const cells = splitCells(line);
+      if (cells.length < 2) return;
+      const body = cells.slice(1);
+      const filled = body.filter(Boolean);
+      // A sheet often stacks several tables, each with its own header row.
+      if (/^unit\b/i.test(cells[0])) { positions = body.map(s => s.toUpperCase()); return; }
+      if (positions === null) {
+        const matched = filled.filter(c => matchPlayer(c)).length;
+        if (filled.length && matched * 2 < filled.length) { positions = body.map(s => s.toUpperCase()); return; }
+        positions = body.map(() => '');
+      }
+      const name = cells[0].replace(/[^A-Za-z0-9 '-]/g, '').trim().toUpperCase();
+      if (!name) return;
+      if (!byName[name]) { byName[name] = { name: name, picks: [] }; order.push(name); }
+      const row = byName[name];
+      body.forEach((c, i) => {
+        if (!c) return;
+        const p = matchPlayer(c);
+        if (!p) { problems.push(name + ' "' + c + '"'); return; }
+        const pos = (positions[i] || '').toUpperCase();
+        const seen = row.picks.filter(x => x.id === p.id)[0];
+        if (seen) { if (!seen.pos && pos) seen.pos = pos; }
+        else row.picks.push({ id: p.id, pos: pos });
+      });
+    });
+    return { rows: order.map(n => byName[n]).filter(r => r.picks.length), problems: problems };
+  }
+  function renderChartPreview() {
+    const res = parseChart($('#chartText').value);
+    const box = $('#chartPreview');
+    $('#chartImport').disabled = !res.rows.length;
+    if (!res.rows.length) { box.innerHTML = '<span class="muted">Nothing recognised yet.</span>'; return; }
+    box.innerHTML = res.rows.map(r => {
+      const known = S.units.some(u => u.name.toLowerCase() === r.name.toLowerCase());
+      return '<div style="margin-bottom:6px"><b>' + esc(r.name) + '</b> <span class="muted">' + r.picks.length + (known ? ', updates existing' : ', new') + '</span><br>' +
+        '<span class="muted">' + esc(r.picks.map(pk => (pk.pos ? pk.pos + ' ' : '') + lastName(player(pk.id))).join(', ')) + '</span></div>';
+    }).join('') + (res.problems.length ? '<div style="color:var(--red)">No roster match: ' + esc(res.problems.join(', ')) + '</div>' : '');
+  }
+  function applyChart() {
+    const res = parseChart($('#chartText').value);
+    let made = 0;
+    res.rows.forEach(r => {
+      let u = S.units.find(x => x.name.toLowerCase() === r.name.toLowerCase());
+      if (!u) { u = { id: uid(), name: r.name, members: [], pos: {} }; S.units.push(u); made++; }
+      if (!u.pos) u.pos = {};
+      r.picks.forEach(pk => {
+        if (u.members.indexOf(pk.id) < 0) u.members.push(pk.id);
+        if (pk.pos) u.pos[pk.id] = pk.pos;
+      });
+    });
+    save(); render();
+    toast(res.rows.length + ' unit' + (res.rows.length === 1 ? '' : 's') + ' imported' + (made ? ', ' + made + ' new' : ''));
+  }
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = () => rej(new Error('could not load the scanner'));
+      document.head.appendChild(s);
+    });
+  }
+  async function scanPhoto(file) {
+    const st = $('#chartStatus');
+    try {
+      st.textContent = 'Loading scanner...';
+      if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+      st.textContent = 'Reading photo...';
+      const r = await window.Tesseract.recognize(file, 'eng', {
+        logger: (m) => { if (m.status === 'recognizing text') st.textContent = 'Reading photo ' + Math.round(m.progress * 100) + '%'; }
+      });
+      const text = (r.data.text || '').split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 2).join('\n');
+      $('#chartText').value = text;
+      renderChartPreview();
+      st.textContent = text ? 'Scan done, check it below' : 'Nothing readable found';
+    } catch (e) {
+      st.textContent = 'Scan failed. Paste the rows instead.';
+    }
   }
 
   function renderCounts() {
@@ -737,6 +879,7 @@
     const u = S.units.find(x => x.id === id), g = curGame();
     if (!u || !g) return;
     S.lineup = u.members.filter(pid => g.present.includes(pid));
+    S.activeUnitId = u.id;
     save(); renderHeader(); renderGame();
     if (navigator.vibrate) navigator.vibrate(20);
     const out = u.members.length - S.lineup.length;
@@ -776,6 +919,7 @@
 
   // ---------- ui helpers ----------
   function numStr(p) { return (p.num === '' || p.num == null) ? '' : String(p.num); }
+  function lastName(p) { return p ? p.name.trim().split(/\s+/).slice(-1)[0] : '?'; }
   function esc(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
   let toastT;
   function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1200); }
@@ -798,7 +942,7 @@
   $('#oppInput').onkeydown = (e) => { if (e.key === 'Enter') $('#startGameBtn').click(); };
   $('#recordBtn').onclick = recordPlay;
   $('#undoBtn').onclick = undo;
-  $('#clearSelBtn').onclick = () => { S.lineup = []; save(); renderGame(); };
+  $('#clearSelBtn').onclick = () => { S.lineup = []; S.activeUnitId = null; save(); renderGame(); };
   $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); save(); render(); } };
   $('#dateEdit').onchange = (e) => { const g = curGame(); if (g && e.target.value) { g.date = e.target.value; save(); render(); } };
   $('#endGameBtn').onclick = () => { S.currentGameId = null; S.lineup = []; save(); render(); };
@@ -827,6 +971,12 @@
   };
   $('#loadTeamBtn').onclick = loadTeamRoster;
   $('#newUnitBtn').onclick = () => openUnitEditor(null, lineupIds());
+  $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; renderChartPreview(); $('#chartDlg').showModal(); };
+  $('#chartText').oninput = renderChartPreview;
+  $('#chartScanBtn').onclick = () => $('#chartFile').click();
+  $('#chartFile').onchange = (e) => { const f = e.target.files[0]; if (f) scanPhoto(f); e.target.value = ''; };
+  $('#chartCancel').onclick = () => $('#chartDlg').close();
+  $('#chartImport').onclick = () => { applyChart(); $('#chartDlg').close(); $('#chartText').value = ''; };
   $('#unitFromLineup').onclick = () => { if (draft) { draft.members = lineupIds().slice(); renderUnitDraft(); } };
   $('#unitNone').onclick = () => { if (draft) { draft.members = []; renderUnitDraft(); } };
   $('#unitCancel').onclick = () => { $('#unitDlg').close(); draft = null; };
@@ -834,8 +984,8 @@
     if (!draft) return;
     const name = $('#unitName').value.trim();
     if (!name) { $('#unitName').focus(); return toast('Give the unit a name'); }
-    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); }
-    else S.units.push({ id: uid(), name: name, members: draft.members.slice() });
+    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); }
+    else S.units.push({ id: uid(), name: name, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
     $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
   };
 
