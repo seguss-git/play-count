@@ -59,6 +59,7 @@
     min-height: 72px; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center;
     color: var(--text); user-select: none; }
   .chip .num { font-size: 22px; font-weight: 800; line-height: 1; }
+  .chip .num.txt { font-size: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip .name { font-size: 12px; margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip .cnt { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--muted); font-weight: 600; }
   .chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -184,8 +185,9 @@
     </div>
     <div class="card">
       <h2>Roster <span class="muted plain" id="rosterCount"></span></h2>
-      <p class="muted small" style="margin:0 0 6px">Mark a player <b>Out</b> if they are absent or hurt so they do not show on the field grid or count against the minimum.</p>
+      <p class="muted small" style="margin:0 0 6px">Mark a player <b>Out</b> if they are absent or hurt so they do not show on the field grid or count against the minimum. Add jersey numbers in the # box when you have them.</p>
       <div id="rosterList"></div>
+      <div class="row" style="margin-top:10px"><button class="btn small" id="loadWhiteBtn">Load White roster</button><span class="muted small">Adds any of the 25 league-sheet players who are missing.</span></div>
     </div>
   </section>
 
@@ -251,12 +253,25 @@
     currentGameId: null,
     lineup: []           // sticky on-field selection
   });
+  // 2026 White team roster (from the league sheet). Numbers can be added on the Roster tab.
+  const WHITE_ROSTER = ['John Bongiorno', 'Fox Boyle', 'Jackson Chernichaw', 'Coleman Croswell', 'Tristan Derrico',
+    'Ellis Drohojowski', 'Henry Farnum', 'KJ Kumar', 'Charlie Leuffer', 'Andrew Love', 'Connor McAnany', 'Henry McNulty',
+    'Cal Mohamed', 'Will Murphy', 'George Pewarski', 'Tyler Pezley', 'Mac Rand', 'Cyrus Roberto', 'Kai Seguss',
+    'Charles Sokolik', 'Brady Stever', 'Ben Thistle', 'Harrison Trotta', 'Thomas Turowski', 'Henry Wood'];
   let S = load();
 
   function load() {
     try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(defaults(), JSON.parse(raw)); }
     catch (e) { console.warn('load failed', e); }
-    return defaults();
+    const s = defaults();
+    WHITE_ROSTER.forEach(n => s.roster.push({ id: uid(), num: '', name: n, active: true }));
+    return s;
+  }
+  function loadWhiteRoster() {
+    const have = new Set(S.roster.map(p => p.name.toLowerCase()));
+    let added = 0;
+    WHITE_ROSTER.forEach(n => { if (!have.has(n.toLowerCase())) { S.roster.push({ id: uid(), num: '', name: n, active: true }); added++; } });
+    save(); render(); toast(added ? 'Added ' + added + ' player' + (added === 1 ? '' : 's') : 'Roster already loaded');
   }
   function save() { localStorage.setItem(KEY, JSON.stringify(S)); }
 
@@ -303,7 +318,9 @@
       const on = S.lineup.includes(p.id);
       const b = document.createElement('button');
       b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
-      b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="num">' + esc(numStr(p)) + '</span><span class="name">' + esc(p.name) + '</span>';
+      const n = numStr(p), parts = p.name.trim().split(/\s+/);
+      const big = n || parts[0], small = n ? p.name : parts.slice(1).join(' ');
+      b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="num' + (n ? '' : ' txt') + '">' + esc(big) + '</span><span class="name">' + esc(small) + '</span>';
       b.onclick = () => toggle(p.id);
       grid.appendChild(b);
     });
@@ -522,7 +539,8 @@
     };
     r.readAsText(f);
   };
-  $('#resetBtn').onclick = () => ask('Delete the roster and every game on this device?', () => { S = defaults(); save(); render(); });
+  $('#resetBtn').onclick = () => ask('Delete every game and reset the roster to the White league sheet?', () => { localStorage.removeItem(KEY); S = load(); save(); render(); });
+  $('#loadWhiteBtn').onclick = loadWhiteRoster;
 
   window.addEventListener('storage', (e) => { if (e.key === KEY) { S = load(); render(); } });
 

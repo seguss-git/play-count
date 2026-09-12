@@ -6,7 +6,7 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
 
 ## Use on the sideline
 
-1. **Roster tab.** Add each player with number and name, or paste the whole list like `12 Jack, 7 Owen, 22 Liam` and hit Import. Mark absent or injured kids **Out** so they are skipped.
+1. **Roster tab.** The 25 White players from the league sheet are preloaded. Add jersey numbers in the # box when you have them. Mark absent or injured kids **Out** so they are skipped. New players can be added one at a time or pasted like `12 Jack, 7 Owen, 22 Liam`. **Load White roster** re-adds anyone who was deleted.
 2. **Game tab.** Type the opponent and start the game. Tap the players on the field, then tap **Record Play**. The lineup stays selected, so on the next play just tap the kids who subbed in and out and record again. Undo fixes a mistake.
 3. **Counts tab.** Sorted fewest plays first, with red and amber flags for anyone under the minimum. Share sends the summary as a text; Download CSV gives a spreadsheet.
 4. **Games tab.** Change the team name, minimum plays per game, and players on the field. Reopen or delete past games, see season totals, and back up or restore the data.
