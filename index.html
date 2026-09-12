@@ -457,7 +457,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.6';
+  const APP_VERSION = '2026.09.12.7';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -465,11 +465,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   var SEED_WHITE = ['John Bongiorno', 'Fox Boyle', 'Jackson Chernichaw', 'Coleman Croswell', 'Tristan Derrico',
     'Ellis Drohojowski', 'Henry Farnum', 'KJ Kumar', 'Charlie Leuffer', 'Andrew Love', 'Connor McAnany', 'Henry McNulty',
     'Cal Mohamed', 'Will Murphy', 'George Pewarski', 'Tyler Pezley', 'Mac Rand', 'Cyrus Roberto', 'Kai Seguss',
-    'Charles Sokolik', 'Brady Stever', 'Ben Thistle', 'Harrison Trotta', 'Thomas Turowski', 'Henry Wood'];
+    'Charles Sokolik', 'Brady Stever', 'Ben Thistle', 'Harrison Trotta', 'Thomas Turowski'];
   var SEED_BLUE = ['Alex Bickmeyer', 'Jack Burdette', 'Max Cohen', 'Will Dolce', 'Maxwell Fischer', 'Hayden Fletcher',
     'Beau Fulk', 'Connor Griffith', 'David Higgins', 'James Kretzman', 'James Masters', 'Nicholas Olsen', 'Preston Perry',
     'Thomas Pulaski', 'Evan Reed', 'Sam Sawicki', 'William Scardigli', 'David Sheaffer', 'Griffin Spatola', 'Max Stevens',
-    'Christian Strand', 'Theodore Walker', 'Alexander Jack Willcocks'];
+    'Christian Strand', 'Theodore Walker', 'Alexander Jack Willcocks', 'Henry Wood'];
+  // Corrections to apply on phones that installed an earlier roster.
+  var SEED_MOVES = [{ name: 'Henry Wood', team: 'Blue' }];
   // [lastName, size, speed, agility, power] as percentile ranks across the grade.
   // Derived from the combine sheet. Raw weights and times are deliberately not shipped.
   var ATHLETE = [
@@ -594,6 +596,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     }
     if (!S.units.length) { importChartText(SEED_CHART); touched = true; }
     if (!S.events.length && seedAttendance()) touched = true;
+    SEED_MOVES.forEach(mv => {
+      const pl = S.roster.find(x => x.name.toLowerCase() === mv.name.toLowerCase());
+      if (!pl || teamOf(pl) === mv.team) return;
+      pl.team = mv.team; touched = true;
+      S.lineup = S.lineup.filter(i => i !== pl.id);
+      S.events.forEach(e => { if (e.type === 'game' && eventTeam(e) !== mv.team) e.present = e.present.filter(i => i !== pl.id); });
+      S.units.forEach(u => { u.members = u.members.filter(i => i !== pl.id); if (u.pos) delete u.pos[pl.id]; });
+    });
     S.roster.forEach(pl => {
       if (teamOf(pl) !== 'White' || (pl.num !== '' && pl.num != null)) return;
       const n = SEED_NUMS[lastName(pl)];
