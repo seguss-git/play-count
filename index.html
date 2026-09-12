@@ -234,8 +234,9 @@
           <button class="btn primary record" id="recordBtn">Record Play</button>
         </div>
         <div class="row" style="margin-top:8px">
-          <button class="btn grow" id="undoBtn">Undo Last</button>
-          <button class="btn grow" id="clearSelBtn">Clear Lineup</button>
+          <button class="btn grow" id="undoBtn">Undo</button>
+          <button class="btn grow" id="allOnBtn" title="Put every present player on, then tap the ones who are off">All on</button>
+          <button class="btn grow" id="clearSelBtn">Clear</button>
           <button class="btn" id="focusBtn" title="Hide everything but the field">Focus</button>
         </div>
       </div>
@@ -249,9 +250,10 @@
           <input id="dateEdit" type="date">
           <input id="oppEdit" placeholder="Opponent" class="grow">
           <button class="btn" id="halfBtn">Halftime</button>
-          <button class="btn" id="endGameBtn">Close</button>
+          <button class="btn" id="endGameBtn">Leave</button>
+          <button class="btn primary" id="finalBtn">Game Final</button>
         </div>
-        <p class="muted small" style="margin:8px 0 0">Closing keeps everything. Reopen any game from the list on this tab or from Attendance.</p>
+        <p class="muted small" style="margin:8px 0 0">Leave keeps the game open for more counting later. Game Final locks it with all its stats; it can still be reopened from the game list if you have to.</p>
       </div>
     </div>
   </section>
@@ -260,7 +262,13 @@
   <section class="view" id="view-counts">
     <div class="card"><div class="stat" id="countStats"></div></div>
     <div class="card">
-      <h2 id="countTitle">Plays per player <span class="muted plain">(fewest first)</span></h2>
+      <h2 id="countTitle">Plays per player</h2>
+      <div class="seg" id="countSeg" style="margin:0 0 8px">
+        <button data-sort="fewest">Fewest</button>
+        <button data-sort="most">Most</button>
+        <button data-sort="number">Number</button>
+        <button data-sort="name">Name</button>
+      </div>
       <div id="countList"></div>
     </div>
     <div class="card">
@@ -465,7 +473,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.10';
+  const APP_VERSION = '2026.09.12.11';
   // Shared team database. Baked in once the project exists; Settings can override.
   const SYNC_URL = '';
   const SYNC_KEY = '';
@@ -659,6 +667,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     focus: false,        // hide everything on the Game tab except the field and the button
     impMode: 'chart',    // import dialog: 'chart' or 'roster'
     subSort: 'chart',    // how the substitute list is ordered
+    countSort: 'fewest', // Counts tab order: fewest, most, number, name
     deviceId: '',        // this phone, so shared play rows know who counted them
     outbox: [],          // rows waiting to reach the shared database
     syncSince: {},       // last server timestamp seen per table
@@ -789,9 +798,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       if (!gs.length) list.innerHTML = '<div class="empty">No games on the schedule yet.</div>';
       gs.forEach(e => {
         const row = document.createElement('div'); row.className = 'rrow';
-        row.innerHTML = '<span class="grow"><b>' + esc(evLabel(e)) + '</b><br><span class="muted small">' + fmtDate(e.date) + ' · ' + e.plays.length + ' plays · ' + e.present.length + ' present</span></span>' +
-          '<button class="btn small open">Count plays</button>';
-        row.querySelector('.open').onclick = () => openGame(e.id);
+        row.innerHTML = '<span class="grow"><b>' + esc(evLabel(e)) + '</b>' + (e.final ? ' <span class="tag">FINAL</span>' : '') + '<br><span class="muted small">' + fmtDate(e.date) + ' · ' + e.plays.length + ' plays · ' + e.present.length + ' present</span></span>' +
+          (e.final ? '<button class="btn small open">Reopen</button>' : '<button class="btn small open">Count plays</button>');
+        row.querySelector('.open').onclick = () => {
+          if (!e.final) return openGame(e.id);
+          ask('Reopen this final game? It goes back to counting until you mark it final again.', () => { e.final = false; pushEvent(e); openGame(e.id); });
+        };
         list.appendChild(row);
       });
       return;
@@ -800,10 +812,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode));
     $('#modeHint').innerHTML = tap
       ? 'Each press on a player counts one play for them. Undo takes back the last press.'
-      : 'Tap the players on the field, then hit <b>Record Play</b>. The lineup stays selected, so after that you only tap the kids who sub in or out.'
+      : 'Tap the players on the field, then hit <b>Record Play</b>. The lineup stays selected, so after that you only tap the kids who sub in or out. Or tap <b>All on</b> and then tap the kids who are sitting.'
         + (S.units.length ? ' A unit button loads that whole group, and you can still sub after.' : '');
     $('#lineupActions').style.display = tap ? 'none' : '';
     $('#clearSelBtn').style.display = tap ? 'none' : '';
+    $('#allOnBtn').style.display = tap ? 'none' : '';
     renderUnitRow(g, tap);
 
     const counts = countsFor(g);
@@ -1366,10 +1379,17 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const g = lastGame();
     const list = $('#countList');
     if (!g) { list.innerHTML = '<div class="empty">No game yet. Start one on the Game tab.</div>'; $('#countStats').innerHTML = ''; return; }
-    $('#countTitle').innerHTML = esc(evLabel(g)) + ' · ' + fmtDate(g.date) + ' <span class="muted plain">(fewest first)</span>';
+    $('#countTitle').innerHTML = esc(evLabel(g)) + ' · ' + fmtDate(g.date) + (g.final ? ' · <span style="color:var(--green)">FINAL</span>' : '');
     const counts = countsFor(g);
     const ros = presentRoster(g);
-    const sorted = ros.slice().sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b));
+    document.querySelectorAll('#countSeg button').forEach(b => b.classList.toggle('active', b.dataset.sort === S.countSort));
+    const byName = (a, b) => lastName(a).localeCompare(lastName(b)) || a.name.localeCompare(b.name);
+    const sorted = ros.slice().sort((a, b) => {
+      if (S.countSort === 'most') return counts[b.id] - counts[a.id] || num(a) - num(b);
+      if (S.countSort === 'number') return num(a) - num(b) || byName(a, b);
+      if (S.countSort === 'name') return byName(a, b);
+      return counts[a.id] - counts[b.id] || num(a) - num(b);
+    });
     const below = sorted.filter(p => counts[p.id] < S.minPlays).length;
     const done = sorted.length - below;
     const max = Math.max(S.minPlays, 1, ...sorted.map(p => counts[p.id]));
@@ -1402,7 +1422,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       row.className = 'rrow' + (e.id === S.selectedEventId ? ' sel' : '');
       row.innerHTML = '<span class="grow" style="cursor:pointer"><b>' + fmtDate(e.date) + '</b> <span class="tag ' + e.type + '">' + esc(evLabel(e)) + '</span>' +
         '<br><span class="muted small">' + e.present.length + ' of ' + poolFor(e).length + ' here' + (e.type === 'game' ? ' · ' + e.plays.length + ' plays' : '') + '</span></span>' +
-        (e.type === 'game' ? (e.id === S.currentGameId ? '<span class="tag live">LIVE</span>' : '<button class="btn small open">Count</button>') : '') +
+        (e.type === 'game' ? (e.id === S.currentGameId ? '<span class="tag live">LIVE</span>' : (e.final ? '<span class="tag">FINAL</span>' : '<button class="btn small open">Count</button>')) : '') +
         '<button class="btn small danger del">✕</button>';
       row.querySelector('.grow').onclick = () => { S.selectedEventId = e.id; save(); renderAttend(); };
       const open = row.querySelector('.open'); if (open) open.onclick = () => openGame(e.id);
@@ -1606,7 +1626,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function pushEvent(e) {
     if (!syncOn()) return;
-    enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: (typeof e.half === 'number') ? e.half : null, deleted: false });
+    enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: (typeof e.half === 'number') ? e.half : null, final: !!e.final, deleted: false });
   }
   function pushEventDeleted(e) { if (syncOn()) enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: null, deleted: true }); }
   function pushAttendanceRow(e, playerId, present) { if (syncOn()) enqueue('djfl_attendance', { event_id: e.id, player_id: playerId, present: !!present }); }
@@ -1658,7 +1678,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           return;
         }
         if (i < 0) {
-          S.events.push({ id: r.id, type: r.type, team: r.team || undefined, date: r.date, opponent: r.opponent || '', present: [], plays: [], rows: [], half: (r.half == null ? undefined : r.half) });
+          S.events.push({ id: r.id, type: r.type, team: r.team || undefined, date: r.date, opponent: r.opponent || '', present: [], plays: [], rows: [], half: (r.half == null ? undefined : r.half), final: !!r.final });
           changed = true;
         } else {
           const e = S.events[i];
@@ -1666,6 +1686,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           e.date = r.date; e.opponent = r.opponent || ''; e.type = r.type; if (r.team) e.team = r.team;
           const nh = (r.half == null ? undefined : r.half);
           if (e.half !== nh) { if (nh === undefined) delete e.half; else e.half = nh; changed = true; }
+          if (!!e.final !== !!r.final) { e.final = !!r.final; changed = true; if (e.final && S.currentGameId === e.id) { S.currentGameId = null; S.lineup = []; } }
         }
       });
     } else if (t === 'djfl_attendance') {
@@ -1793,7 +1814,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const g = lastGame(); if (!g) return '';
     const c = countsFor(g);
     const ros = presentRoster(g).sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
-    const lines = [S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
+    const lines = [(g.final ? 'FINAL · ' : '') + S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
     ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < S.minPlays ? ' (needs ' + (S.minPlays - c[p.id]) + ')' : '')));
     const absent = teamRoster(eventTeam(g)).filter(p => !g.present.includes(p.id));
     if (absent.length) lines.push('Absent: ' + sortRoster(absent).map(p => p.name).join(', '));
@@ -1852,6 +1873,22 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     pushEvent(g); save(); render();
   };
   $('#endGameBtn').onclick = () => { S.currentGameId = null; S.lineup = []; save(); render(); };
+  $('#finalBtn').onclick = () => {
+    const g = curGame(); if (!g) return;
+    ask('Mark this game final? All ' + g.plays.length + ' plays and every count are kept. It can be reopened from the game list if you ever need to.', () => {
+      g.final = true; g.finalAt = Date.now(); pushEvent(g);
+      S.currentGameId = null; S.lineup = []; S.activeUnitId = null;
+      save(); render(); showView('counts');
+      toast('Final. ' + g.plays.length + ' plays saved.');
+    });
+  };
+  $('#allOnBtn').onclick = () => {
+    const g = curGame(); if (!g) return;
+    S.lineup = presentRoster(g).map(p => p.id); S.activeUnitId = null;
+    if (S.fieldView) S.fieldView = false;
+    save(); renderHeader(); renderGame();
+    toast('Everyone on. Tap the kids who are off.');
+  };
 
   $('#evType').onchange = () => renderAttend();
   $('#evAddBtn').onclick = () => {
@@ -1936,6 +1973,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#minPlays').onchange = (e) => { S.minPlays = Math.max(0, Number(e.target.value) || 0); save(); render(); };
   $('#fieldSize').onchange = (e) => { S.fieldSize = Math.max(1, Number(e.target.value) || 11); save(); render(); };
 
+  document.querySelectorAll('#countSeg button').forEach(b => b.onclick = () => { S.countSort = b.dataset.sort; save(); renderCounts(); });
   $('#copyBtn').onclick = async () => {
     const t = summaryText(); if (!t) return toast('No game yet');
     try { await navigator.clipboard.writeText(t); toast('Copied'); } catch (err) { window.prompt('Copy this:', t); }
