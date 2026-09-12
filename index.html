@@ -284,8 +284,11 @@
   <section class="view" id="view-settings">
     <div class="card">
       <h2>Settings</h2>
+      <p class="muted small" style="margin:0 0 8px">Whichever team is picked here is the one that games, play counts and units belong to. Practice attendance always covers both teams, so a coach from either side can share this app and switch to their own.</p>
       <div class="row wrap">
-        <div><label class="field">Team name</label><input id="teamName" style="width:140px"></div>
+        <div style="flex:1;min-width:180px"><label class="field">My team</label>
+          <div class="seg" id="teamSeg" style="margin:0"><button data-team="White">White</button><button data-team="Blue">Blue</button></div>
+        </div>
         <div><label class="field">Min plays / game</label><input id="minPlays" type="number" inputmode="numeric" min="0"></div>
         <div><label class="field">Players on field</label><input id="fieldSize" type="number" inputmode="numeric" min="1" max="15"></div>
       </div>
@@ -409,7 +412,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) return Object.assign(defaults(), JSON.parse(raw));
+      if (raw) {
+        const st = Object.assign(defaults(), JSON.parse(raw));
+        if (st.team !== 'White' && st.team !== 'Blue') st.team = 'White';
+        if (st.rosterTeam !== 'White' && st.rosterTeam !== 'Blue') st.rosterTeam = st.team;
+        return st;
+      }
       const old = localStorage.getItem(OLD_KEY);
       if (old) return migrate(JSON.parse(old));
     } catch (e) { console.warn('load failed', e); }
@@ -420,7 +428,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!w && !b) return;
     if (w) {
       S.template = w;
-      if (!whiteRoster().length) w.forEach(n => S.roster.push({ id: uid(), num: '', name: n, team: 'White' }));
+      if (!teamRoster('White').length) w.forEach(n => S.roster.push({ id: uid(), num: '', name: n, team: 'White' }));
     }
     if (b) {
       S.templateB = b;
@@ -443,14 +451,18 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
   const ev = (id) => S.events.find(e => e.id === id) || null;
   const curGame = () => ev(S.currentGameId);
-  const games = () => S.events.filter(e => e.type === 'game').sort(byDate);
+  const eventTeam = (e) => e.team || 'White';
+  const mine = (e) => e.type === 'practice' || eventTeam(e) === S.team;
+  const games = () => S.events.filter(e => e.type === 'game' && mine(e)).sort(byDate);
   const lastGame = () => curGame() || games().slice(-1)[0] || null;
   const player = (id) => S.roster.find(p => p.id === id);
   // Play counts, games and units are White only. Practices cover the whole program.
   const teamOf = (p) => p.team || 'White';
   const teamRoster = (t) => S.roster.filter(p => teamOf(p) === t);
-  const whiteRoster = () => teamRoster('White');
-  const poolFor = (e) => (e && e.type === 'practice') ? S.roster : whiteRoster();
+  // The team this phone is running games for. Practices always cover everyone.
+  const gameRoster = () => teamRoster(S.team);
+  const myUnits = () => S.units.filter(u => (u.team || 'White') === S.team);
+  const poolFor = (e) => (!e || e.type === 'practice') ? S.roster : teamRoster(eventTeam(e));
   const num = (p) => (p.num === '' || p.num == null) ? 999 : Number(p.num);
   const sortRoster = (arr) => arr.slice().sort((a, b) => (num(a) - num(b)) || a.name.localeCompare(b.name));
   const presentRoster = (e) => sortRoster(S.roster.filter(p => e.present.includes(p.id)));
@@ -474,8 +486,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function evLabel(e) { return e.type === 'game' ? 'vs ' + (e.opponent || 'TBD') : 'Practice'; }
   function addEvent(type, date, opponent) {
-    const pool = type === 'practice' ? S.roster : whiteRoster();
+    const pool = type === 'practice' ? S.roster : gameRoster();
     const e = { id: uid(), type: type, date: date || today(), opponent: (opponent || '').trim(), present: pool.map(p => p.id), plays: [] };
+    if (type === 'game') e.team = S.team;
     S.events.push(e);
     return e;
   }
@@ -524,12 +537,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const grid = $('#playerGrid'); grid.innerHTML = '';
     const ros = presentRoster(g);
     if (!ros.length) {
-      const noRoster = !whiteRoster().length;
+      const noRoster = !gameRoster().length;
       grid.innerHTML = '<div class="empty" style="grid-column:1/-1">' + (noRoster
         ? 'There are no players on the roster yet.<br><br><button class="btn small" id="goRosterBtn">Add the team</button>'
         : 'Nobody is marked present for this game.<br><br><button class="btn small" id="allPresentBtn">Mark everyone present</button>') + '</div>';
       if (noRoster) $('#goRosterBtn').onclick = () => showView('roster');
-      else $('#allPresentBtn').onclick = () => { g.present = whiteRoster().map(p => p.id); save(); render(); toast('Everyone marked present'); };
+      else $('#allPresentBtn').onclick = () => { g.present = gameRoster().map(p => p.id); save(); render(); toast('Everyone marked present'); };
     }
     ros.forEach(p => {
       const n = numStr(p), parts = p.name.trim().split(/\s+/);
@@ -569,12 +582,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function renderUnitRow(g, tap) {
     const row = $('#unitRow');
     // Units are optional. Nothing shows here until you build one on the Roster tab.
-    const show = !tap && S.units.length > 0;
+    const show = !tap && myUnits().length > 0;
     row.style.display = show ? '' : 'none';
     if (!show) return;
     row.innerHTML = '';
     const cur = S.lineup.slice().sort().join(',');
-    S.units.forEach(u => {
+    myUnits().forEach(u => {
       const avail = u.members.filter(id => g.present.includes(id));
       const b = document.createElement('button');
       b.className = 'ubtn' + (avail.length && avail.slice().sort().join(',') === cur ? ' on' : '');
@@ -591,9 +604,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 
   function renderUnitList() {
     const list = $('#unitList');
-    if (!S.units.length) { list.innerHTML = '<div class="empty">No units yet. Build one here, or tap the players on the field and use the + button on the Game tab.</div>'; return; }
+    if (!myUnits().length) { list.innerHTML = '<div class="empty">No units yet. Build one here, or tap the players on the field and use the + button on the Game tab.</div>'; return; }
     list.innerHTML = '';
-    S.units.forEach(u => {
+    myUnits().forEach(u => {
       const row = document.createElement('div'); row.className = 'rrow';
       const who = u.members.map(id => player(id)).filter(Boolean);
       row.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span><br><span class="muted small">' +
@@ -622,8 +635,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!draft) return;
     $('#unitCount').textContent = draft.members.length + ' selected';
     const box = $('#unitMembers'); box.innerHTML = '';
-    if (!whiteRoster().length) { box.innerHTML = '<div class="empty">Add White players on the Roster tab first.</div>'; return; }
-    sortRoster(whiteRoster()).forEach(p => {
+    if (!gameRoster().length) { box.innerHTML = '<div class="empty">Add ' + S.team + ' players on the Roster tab first.</div>'; return; }
+    sortRoster(gameRoster()).forEach(p => {
       const inU = draft.members.includes(p.id);
       const r = document.createElement('div');
       r.className = 'arow' + (inU ? ' here' : '');
@@ -661,7 +674,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       (p) => t.length > 3 && parts(p).slice(-1)[0].indexOf(t.slice(0, -1)) === 0
     ];
     for (let i = 0; i < tries.length; i++) {
-      const m = whiteRoster().filter(tries[i]);
+      const m = gameRoster().filter(tries[i]);
       if (m.length === 1) return m[0];
     }
     return null;
@@ -703,7 +716,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#chartImport').disabled = !res.rows.length;
     if (!res.rows.length) { box.innerHTML = '<span class="muted">Nothing recognised yet.</span>'; return; }
     box.innerHTML = res.rows.map(r => {
-      const known = S.units.some(u => u.name.toLowerCase() === r.name.toLowerCase());
+      const known = myUnits().some(u => u.name.toLowerCase() === r.name.toLowerCase());
       return '<div style="margin-bottom:6px"><b>' + esc(r.name) + '</b> <span class="muted">' + r.picks.length + (known ? ', updates existing' : ', new') + '</span><br>' +
         '<span class="muted">' + esc(r.picks.map(pk => (pk.pos ? pk.pos + ' ' : '') + lastName(player(pk.id))).join(', ')) + '</span></div>';
     }).join('') + (res.problems.length ? '<div style="color:var(--red)">No roster match: ' + esc(res.problems.join(', ')) + '</div>' : '');
@@ -712,8 +725,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const res = parseChart($('#chartText').value);
     let made = 0;
     res.rows.forEach(r => {
-      let u = S.units.find(x => x.name.toLowerCase() === r.name.toLowerCase());
-      if (!u) { u = { id: uid(), name: r.name, members: [], pos: {} }; S.units.push(u); made++; }
+      let u = myUnits().filter(x => x.name.toLowerCase() === r.name.toLowerCase())[0];
+      if (!u) { u = { id: uid(), name: r.name, team: S.team, members: [], pos: {} }; S.units.push(u); made++; }
       if (!u.pos) u.pos = {};
       r.picks.forEach(pk => {
         if (u.members.indexOf(pk.id) < 0) u.members.push(pk.id);
@@ -775,7 +788,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!$('#evDate').value) $('#evDate').value = today();
     $('#evOpp').style.display = $('#evType').value === 'game' ? '' : 'none';
     const list = $('#eventList'); list.innerHTML = '';
-    const evs = S.events.slice().sort(byDate).reverse();
+    const evs = S.events.filter(mine).slice().sort(byDate).reverse();
     if (!evs.length) list.innerHTML = '<div class="empty">Nothing scheduled yet. Add a practice or game above.</div>';
     if (S.selectedEventId && !ev(S.selectedEventId)) S.selectedEventId = null;
     evs.forEach(e => {
@@ -851,9 +864,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const t = S.rosterTeam;
     document.querySelectorAll('#rosterSeg button').forEach(b => b.classList.toggle('active', b.dataset.team === t));
     $('#addHead').textContent = 'Add ' + t + ' player';
-    $('#rosterNote').innerHTML = t === 'White'
-      ? 'The White team. Games, play counts and units all use this list.'
-      : 'The Blue team. These players appear only in <b>practice</b> attendance, never in games or play counts.';
+    $('#rosterNote').innerHTML = t === S.team
+      ? 'Your team. Games, play counts and units all use this list.'
+      : 'The other team. These players show up only in <b>practice</b> attendance, never in your games or play counts.';
     $('#loadTeamRow').style.display = (t === 'White' ? S.template : S.templateB).length ? '' : 'none';
     const ros = sortRoster(teamRoster(t));
     $('#rosterCount').textContent = ros.length ? '(' + ros.length + ')' : '';
@@ -878,12 +891,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
 
   function renderSettings() {
-    $('#teamName').value = S.team; $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
+    document.querySelectorAll('#teamSeg button').forEach(b => b.classList.toggle('active', b.dataset.team === S.team));
+    $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
     if (document.activeElement !== $('#sheetUrl')) $('#sheetUrl').value = S.sheetUrl || '';
     $('#pushBtn').style.display = S.sheetUrl ? '' : 'none';
     const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
     games().forEach(g => { const c = countsFor(g); Object.keys(c).forEach(id => { if (tot[id] && c[id] > 0) { tot[id].plays += c[id]; tot[id].games++; } }); });
-    $('#seasonList').innerHTML = sortRoster(whiteRoster()).map(p =>
+    $('#seasonList').innerHTML = sortRoster(gameRoster()).map(p =>
       '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
       '<span class="muted small">' + tot[p.id].games + ' gm</span><span class="pc">' + tot[p.id].plays + '</span></div>'
     ).join('') || '<div class="empty">No players yet.</div>';
@@ -939,6 +953,16 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (navigator.vibrate) navigator.vibrate(20);
     const out = u.members.length - S.lineup.length;
     toast(u.name + ': ' + S.lineup.length + ' on field' + (out ? ', ' + out + ' absent' : ''));
+  }
+  function setTeam(t) {
+    if (S.team === t) return;
+    S.team = t;
+    const g = curGame();
+    if (g && !mine(g)) { S.currentGameId = null; S.lineup = []; S.activeUnitId = null; }
+    S.rosterTeam = t;
+    S.selectedEventId = null;
+    save(); render();
+    toast('Now running games for ' + t);
   }
   function loadTeamRoster() {
     const t = S.rosterTeam;
@@ -1000,7 +1024,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const ros = presentRoster(g).sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
     const lines = [S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
     ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < S.minPlays ? ' (needs ' + (S.minPlays - c[p.id]) + ')' : '')));
-    const absent = whiteRoster().filter(p => !g.present.includes(p.id));
+    const absent = teamRoster(eventTeam(g)).filter(p => !g.present.includes(p.id));
     if (absent.length) lines.push('Absent: ' + sortRoster(absent).map(p => p.name).join(', '));
     return lines.join('\n');
   }
@@ -1009,7 +1033,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const c = countsFor(g);
     const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
     const rows = [['Number', 'Name', 'Plays', 'Present', 'Opponent', 'Date'].join(',')];
-    sortRoster(whiteRoster()).forEach(p => rows.push([numStr(p), q(p.name), c[p.id], g.present.includes(p.id) ? 'yes' : 'no', q(g.opponent || ''), g.date].join(',')));
+    sortRoster(teamRoster(eventTeam(g))).forEach(p => rows.push([numStr(p), q(p.name), c[p.id], g.present.includes(p.id) ? 'yes' : 'no', q(g.opponent || ''), g.date].join(',')));
     return rows.join('\n');
   }
   function download(name, text, type) {
@@ -1097,11 +1121,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const name = $('#unitName').value.trim();
     if (!name) { $('#unitName').focus(); return toast('Give the unit a name'); }
     if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); }
-    else S.units.push({ id: uid(), name: name, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
+    else S.units.push({ id: uid(), name: name, team: S.team, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
     $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
   };
 
-  $('#teamName').onchange = (e) => { S.team = e.target.value.trim() || 'White'; save(); render(); };
+  document.querySelectorAll('#teamSeg button').forEach(b => b.onclick = () => setTeam(b.dataset.team));
   $('#minPlays').onchange = (e) => { S.minPlays = Math.max(0, Number(e.target.value) || 0); save(); render(); };
   $('#fieldSize').onchange = (e) => { S.fieldSize = Math.max(1, Number(e.target.value) || 11); save(); render(); };
 
