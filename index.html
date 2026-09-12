@@ -457,7 +457,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.7';
+  const APP_VERSION = '2026.09.12.8';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -1770,15 +1770,27 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // The service worker caches the app so it opens with no signal. The page is always
   // fetched network-first, so a connection means the newest version. While the app is
   // open we also check every few minutes and whenever the network comes back.
-  let updateReady = false;
-  function applyUpdate() { location.reload(); }
+  let updateReady = false, lastCheck = 0;
+  // Ask the worker to pull the fresh page into its cache before we reload. Without
+  // this a slow signal can time out the reload and hand back the old copy again.
+  function applyUpdate() {
+    const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (!sw) { location.reload(); return; }
+    let done = false;
+    const go = () => { if (!done) { done = true; location.reload(); } };
+    navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'refreshed') go(); });
+    sw.postMessage({ type: 'refresh' });
+    setTimeout(go, 15000);
+  }
   function offerUpdate() {
     updateReady = true;
     if (!curGame() && !document.querySelector('dialog[open]')) { applyUpdate(); return; }
     $('#updateBar').style.display = '';
   }
-  async function checkForUpdate() {
+  async function checkForUpdate(force) {
     if (!navigator.onLine || !/^https?:/.test(location.protocol)) return;
+    if (!force && Date.now() - lastCheck < 20000) return;
+    lastCheck = Date.now();
     try {
       const r = await fetch('index.html?u=' + Date.now(), { cache: 'no-store' });
       const t = await r.text();
@@ -1797,8 +1809,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       });
       setInterval(() => { reg.update().catch(() => {}); checkForUpdate(); }, 5 * 60 * 1000);
     }).catch(() => {});
-    window.addEventListener('online', checkForUpdate);
-    setTimeout(checkForUpdate, 8000);
+    window.addEventListener('online', () => checkForUpdate(true));
+    // Coming back to the foreground is the moment that matters on a phone.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+    window.addEventListener('pageshow', () => checkForUpdate());
+    window.addEventListener('focus', () => checkForUpdate());
+    setTimeout(() => checkForUpdate(true), 4000);
   }
   $('#updateBar').onclick = applyUpdate;
 

@@ -5,7 +5,7 @@
  * with a connection gets the newest version on their next open, and anyone without
  * one gets the copy from last time. Bump VERSION when shipping to purge old caches.
  */
-var VERSION = '2026.09.12.7';
+var VERSION = '2026.09.12.8';
 var CACHE = 'djfl4-' + VERSION;
 var SHELL = ['./', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png'];
 var NETWORK_TIMEOUT_MS = 4000;
@@ -71,3 +71,17 @@ function assetCacheFirst(req) {
     });
   });
 }
+
+// The page asks for this right before it reloads to pick up a new version.
+self.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'refresh') return;
+  var client = e.source;
+  var pageUrl = new URL('index.html', self.registration.scope).href;
+  caches.open(CACHE).then(function (cache) {
+    return fetch(pageUrl, { cache: 'no-store' }).then(function (res) {
+      if (res && res.ok) return Promise.all([cache.put('./index.html', res.clone()), cache.put('./', res.clone())]);
+    });
+  }).catch(function () {}).then(function () {
+    if (client) client.postMessage({ type: 'refreshed' });
+  });
+});
