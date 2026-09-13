@@ -296,12 +296,14 @@
       <h2>Schedule <span class="muted plain">(tap one to take attendance)</span></h2>
       <div id="eventList"></div>
     </div>
+    <div id="attendHome"></div>
     <div class="card" id="attendCard" style="display:none">
       <h2 id="attendTitle">Attendance</h2>
-      <div class="row" style="margin-bottom:6px">
+      <div class="row wrap" style="margin-bottom:6px">
         <button class="btn small" id="allHereBtn">Everyone here</button>
         <button class="btn small" id="noneHereBtn">Clear</button>
         <button class="btn small" id="pushBtn">Send to Sheet</button>
+        <button class="btn small" id="attendDoneBtn">Done</button>
         <span class="muted small grow" style="text-align:right" id="attendCount"></span>
       </div>
       <div id="attendList"></div>
@@ -473,7 +475,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.12';
+  const APP_VERSION = '2026.09.12.13';
   // Shared team database. Baked in once the project exists; Settings can override.
   const SYNC_URL = '';
   const SYNC_KEY = '';
@@ -1425,7 +1427,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function renderAttend() {
     if (!$('#evDate').value) $('#evDate').value = today();
     $('#evOpp').style.display = $('#evType').value === 'game' ? '' : 'none';
-    const list = $('#eventList'); list.innerHTML = '';
+    const list = $('#eventList');
+    const card = $('#attendCard');
+    $('#attendHome').appendChild(card);
+    list.innerHTML = '';
     const evs = S.events.filter(mine).slice().sort(byDate).reverse();
     if (!evs.length) list.innerHTML = '<div class="empty">Nothing scheduled yet. Add a practice or game above.</div>';
     if (S.selectedEventId && !ev(S.selectedEventId)) S.selectedEventId = null;
@@ -1436,7 +1441,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         '<br><span class="muted small">' + e.present.length + ' of ' + poolFor(e).length + ' here' + (e.type === 'game' ? ' · ' + e.plays.length + ' plays' : '') + '</span></span>' +
         (e.type === 'game' ? (e.id === S.currentGameId ? '<span class="tag live">LIVE</span>' : (e.final ? '<span class="tag">FINAL</span>' : '<button class="btn small open">Count</button>')) : '') +
         '<button class="btn small danger del">✕</button>';
-      row.querySelector('.grow').onclick = () => { S.selectedEventId = e.id; save(); renderAttend(); };
+      row.querySelector('.grow').onclick = () => {
+        S.selectedEventId = (S.selectedEventId === e.id) ? null : e.id; save(); renderAttend();
+        if (S.selectedEventId) { const r = $('#eventList .rrow.sel'); if (r && r.scrollIntoView) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      };
       const open = row.querySelector('.open'); if (open) open.onclick = () => openGame(e.id);
       row.querySelector('.del').onclick = () => ask('Delete ' + evLabel(e) + ' on ' + fmtDate(e.date) + (e.plays.length ? ' and its ' + e.plays.length + ' plays' : '') + '?', () => {
         S.events = S.events.filter(x => x.id !== e.id);
@@ -1449,7 +1457,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     });
 
     const sel = ev(S.selectedEventId);
-    $('#attendCard').style.display = sel ? '' : 'none';
+    card.style.display = sel ? '' : 'none';
+    if (sel) { const selRow = list.querySelector('.rrow.sel'); if (selRow) selRow.insertAdjacentElement('afterend', card); }
     if (sel) {
       $('#attendTitle').innerHTML = 'Attendance · ' + fmtDate(sel.date) + ' <span class="plain">' + esc(evLabel(sel)) + '</span>';
       const pool = poolFor(sel);
@@ -1909,6 +1918,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     S.selectedEventId = e.id; $('#evOpp').value = ''; save(); render();
     toast((e.type === 'game' ? 'Game' : 'Practice') + ' added for ' + fmtDate(e.date));
   };
+  $('#attendDoneBtn').onclick = () => { S.selectedEventId = null; save(); renderAttend(); };
   $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = poolFor(e).map(p => p.id); pushAllAttendance(e); save(); render(); } };
   document.querySelectorAll('#rosterSeg button').forEach(b => b.onclick = () => { S.rosterTeam = b.dataset.team; save(); render(); });
   document.querySelectorAll('#subSeg button').forEach(b => b.onclick = () => {
