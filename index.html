@@ -283,6 +283,11 @@
 
   <!-- ATTENDANCE VIEW -->
   <section class="view" id="view-attend">
+    <div class="seg" id="attSeg">
+      <button data-v="take">Take attendance</button>
+      <button data-v="season">Season</button>
+    </div>
+    <div id="attendMain">
     <div class="card">
       <h2>Add practice or game</h2>
       <div class="row wrap">
@@ -308,9 +313,19 @@
       </div>
       <div id="attendList"></div>
     </div>
-    <div class="card">
+    </div>
+    <div class="card" id="seasonCard" style="display:none">
       <h2>Season attendance</h2>
+      <div class="seg" id="seasonSeg" style="margin:0 0 8px">
+        <button data-sort="lowest">Lowest first</button>
+        <button data-sort="missed">Most missed</button>
+        <button data-sort="name">Name</button>
+      </div>
       <div id="attendSeason"></div>
+      <div class="row wrap" style="margin-top:10px">
+        <button class="btn small" id="seasonCopyBtn">Copy summary</button>
+        <span class="muted small">Tap a player to see the dates missed.</span>
+      </div>
     </div>
   </section>
 
@@ -475,7 +490,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.13';
+  const APP_VERSION = '2026.09.12.14';
   // Shared team database. Baked in once the project exists; Settings can override.
   const SYNC_URL = '';
   const SYNC_KEY = '';
@@ -682,6 +697,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     impMode: 'chart',    // import dialog: 'chart' or 'roster'
     subSort: 'chart',    // how the substitute list is ordered
     countSort: 'fewest', // Counts tab order: fewest, most, number, name
+    attView: 'take',     // Attendance tab: 'take' or 'season'
+    seasonSort: 'lowest',
+    seasonOpen: null,    // player whose missed dates are expanded
     deviceId: '',        // this phone, so shared play rows know who counted them
     outbox: [],          // rows waiting to reach the shared database
     syncSince: {},       // last server timestamp seen per table
@@ -1491,23 +1509,79 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       });
     }
 
-    const gs = S.events.filter(e => e.type === 'game'), ps = S.events.filter(e => e.type === 'practice');
-    $('#attendSeason').innerHTML = ['White', 'Blue'].map(t => {
-      const members = sortRoster(teamRoster(t));
-      if (!members.length) return '';
-      const head = '<div class="muted small" style="padding:10px 4px 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">' + t + '</div>';
-      return head + members.map(p => {
-        const isW = t === 'White';
-        const ga = isW ? gs.filter(e => e.present.includes(p.id)).length : 0;
-        const pa = ps.filter(e => e.present.includes(p.id)).length;
-        const tot = (isW ? gs.length : 0) + ps.length, pct = tot ? Math.round((ga + pa) / tot * 100) : 0;
-        return '<div class="crow"><span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
-          '<span class="muted small">' + (isW ? 'G ' + ga + '/' + gs.length + ' · ' : '') + 'P ' + pa + '/' + ps.length + '</span>' +
-          '<span class="pc" style="color:' + (pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)') + '">' + pct + '%</span></div>';
-      }).join('');
-    }).join('') || '<div class="empty">No players yet.</div>';
+    renderSeason();
   }
 
+  function seasonStats(t) {
+    const ps = S.events.filter(e => e.type === 'practice').sort(byDate);
+    const gs = S.events.filter(e => e.type === 'game' && eventTeam(e) === t).sort(byDate);
+    const all = gs.concat(ps);
+    return sortRoster(teamRoster(t)).map(p => {
+      const missed = all.filter(e => e.present.indexOf(p.id) < 0);
+      const att = all.length - missed.length;
+      return { p: p, att: att, tot: all.length, pct: all.length ? Math.round(att / all.length * 100) : 0, missed: missed,
+        ga: gs.filter(e => e.present.indexOf(p.id) >= 0).length, gt: gs.length,
+        pa: ps.filter(e => e.present.indexOf(p.id) >= 0).length, pt: ps.length };
+    });
+  }
+  function seasonSorted(t) {
+    const rows = seasonStats(t);
+    if (S.seasonSort === 'name') return rows.sort((a, b) => lastName(a.p).localeCompare(lastName(b.p)));
+    if (S.seasonSort === 'missed') return rows.sort((a, b) => b.missed.length - a.missed.length || a.pct - b.pct || num(a.p) - num(b.p));
+    return rows.sort((a, b) => a.pct - b.pct || b.missed.length - a.missed.length || num(a.p) - num(b.p));
+  }
+  function renderSeason() {
+    const season = S.attView === 'season';
+    $('#attendMain').style.display = season ? 'none' : '';
+    $('#seasonCard').style.display = season ? '' : 'none';
+    document.querySelectorAll('#attSeg button').forEach(b => b.classList.toggle('active', b.dataset.v === S.attView));
+    document.querySelectorAll('#seasonSeg button').forEach(b => b.classList.toggle('active', b.dataset.sort === S.seasonSort));
+    if (!season) return;
+    const box = $('#attendSeason'); box.innerHTML = '';
+    let any = false;
+    ['White', 'Blue'].forEach(t => {
+      const rows = seasonSorted(t);
+      if (!rows.length) return;
+      any = true;
+      const head = document.createElement('div');
+      head.className = 'muted small';
+      head.style.cssText = 'padding:10px 4px 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em';
+      head.textContent = t + ' · ' + rows[0].tot + ' session' + (rows[0].tot === 1 ? '' : 's');
+      box.appendChild(head);
+      rows.forEach(r => {
+        const row = document.createElement('div');
+        row.className = 'crow';
+        row.style.cursor = 'pointer';
+        const colour = r.pct >= 80 ? 'var(--green)' : r.pct >= 50 ? 'var(--amber)' : 'var(--red)';
+        row.innerHTML = '<span class="pn">' + esc(numStr(r.p)) + '</span><span class="pname">' + esc(r.p.name) + '</span>' +
+          '<span class="muted small">' + (r.gt ? 'G ' + r.ga + '/' + r.gt + ' · ' : '') + 'P ' + r.pa + '/' + r.pt + '</span>' +
+          '<span class="pc" style="color:' + colour + '">' + r.pct + '%</span>';
+        row.onclick = () => { S.seasonOpen = (S.seasonOpen === r.p.id) ? null : r.p.id; save(); renderSeason(); };
+        box.appendChild(row);
+        if (S.seasonOpen === r.p.id) {
+          const d = document.createElement('div');
+          d.className = 'small';
+          d.style.cssText = 'padding:4px 8px 10px 44px;color:var(--muted)';
+          d.innerHTML = r.missed.length
+            ? '<span style="color:var(--red)">Missed ' + r.missed.length + ':</span> ' + esc(r.missed.map(e => fmtDate(e.date) + (e.type === 'game' ? ' (game)' : '')).join(', '))
+            : '<span style="color:var(--green)">Has not missed a session.</span>';
+          box.appendChild(d);
+        }
+      });
+    });
+    if (!any) box.innerHTML = '<div class="empty">No players yet.</div>';
+  }
+  function seasonSummaryText() {
+    const out = [];
+    ['White', 'Blue'].forEach(t => {
+      const rows = seasonSorted(t);
+      if (!rows.length) return;
+      out.push(t + ' season attendance (' + rows[0].tot + ' sessions)');
+      rows.forEach(r => out.push('  ' + (numStr(r.p) ? '#' + numStr(r.p) + ' ' : '') + r.p.name + ': ' + r.pct + '% (' + r.att + '/' + r.tot + ')' + (r.missed.length ? ' missed ' + r.missed.map(e => fmtDate(e.date)).join(', ') : '')));
+      out.push('');
+    });
+    return out.join('\n').trim();
+  }
   function renderRoster() {
     const list = $('#rosterList');
     const t = S.rosterTeam;
@@ -1919,6 +1993,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     toast((e.type === 'game' ? 'Game' : 'Practice') + ' added for ' + fmtDate(e.date));
   };
   $('#attendDoneBtn').onclick = () => { S.selectedEventId = null; save(); renderAttend(); };
+  document.querySelectorAll('#attSeg button').forEach(b => b.onclick = () => { S.attView = b.dataset.v; save(); renderSeason(); });
+  document.querySelectorAll('#seasonSeg button').forEach(b => b.onclick = () => { S.seasonSort = b.dataset.sort; save(); renderSeason(); });
+  $('#seasonCopyBtn').onclick = async () => {
+    const t = seasonSummaryText(); if (!t) return toast('Nothing to copy yet');
+    try { await navigator.clipboard.writeText(t); toast('Copied'); } catch (err) { window.prompt('Copy this:', t); }
+  };
   $('#allHereBtn').onclick = () => { const e = ev(S.selectedEventId); if (e) { e.present = poolFor(e).map(p => p.id); pushAllAttendance(e); save(); render(); } };
   document.querySelectorAll('#rosterSeg button').forEach(b => b.onclick = () => { S.rosterTeam = b.dataset.team; save(); render(); });
   document.querySelectorAll('#subSeg button').forEach(b => b.onclick = () => {
@@ -1944,7 +2024,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }, 5000);
   window.addEventListener('online', () => scheduleSync(500));
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(500); });
-  window.__djfl = { sync: runSync, state: () => S };
+  window.__djfl = { sync: runSync, state: () => S, seasonText: seasonSummaryText };
   $('#sheetUrl').onchange = (e) => { S.sheetUrl = e.target.value.trim(); save(); render(); };
   $('#sheetTestBtn').onclick = async () => {
     S.sheetUrl = $('#sheetUrl').value.trim(); save();
