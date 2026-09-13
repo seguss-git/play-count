@@ -309,6 +309,11 @@
         <button class="btn small" id="noneHereBtn">Clear</button>
         <button class="btn small" id="pushBtn">Send to Sheet</button>
         <button class="btn small" id="attendDoneBtn">Done</button>
+      </div>
+      <div class="seg" id="attSortSeg" style="margin:0 0 6px">
+        <button data-sort="number">Number</button>
+        <button data-sort="name">Name</button>
+        <button data-sort="absent">Absent first</button>
         <span class="muted small grow" style="text-align:right" id="attendCount"></span>
       </div>
       <div id="attendList"></div>
@@ -490,7 +495,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.14';
+  const APP_VERSION = '2026.09.12.15';
   // Shared team database. Baked in once the project exists; Settings can override.
   const SYNC_URL = '';
   const SYNC_KEY = '';
@@ -698,6 +703,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     subSort: 'chart',    // how the substitute list is ordered
     countSort: 'fewest', // Counts tab order: fewest, most, number, name
     attView: 'take',     // Attendance tab: 'take' or 'season'
+    attSort: 'number',   // check list order: number, name, absent
     seasonSort: 'lowest',
     seasonOpen: null,    // player whose missed dates are expanded
     deviceId: '',        // this phone, so shared play rows know who counted them
@@ -1483,8 +1489,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       $('#attendCount').textContent = pool.filter(p => sel.present.includes(p.id)).length + ' of ' + pool.length + ' here';
       const al = $('#attendList'); al.innerHTML = '';
       const groups = sel.type === 'practice' ? ['White', 'Blue'] : ['White'];
+      document.querySelectorAll('#attSortSeg button').forEach(b => b.classList.toggle('active', b.dataset.sort === S.attSort));
       groups.forEach(t => {
-        const members = sortRoster(teamRoster(t));
+        let members = sortRoster(teamRoster(t));
+        if (S.attSort === 'name') members = members.slice().sort((a, b) => lastName(a).localeCompare(lastName(b)) || a.name.localeCompare(b.name));
+        if (S.attSort === 'absent') members = members.slice().sort((a, b) => (sel.present.indexOf(a.id) >= 0 ? 1 : 0) - (sel.present.indexOf(b.id) >= 0 ? 1 : 0) || num(a) - num(b));
         if (!members.length) return;
         if (sel.type === 'practice') {
           const h = document.createElement('div');
@@ -1993,6 +2002,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     toast((e.type === 'game' ? 'Game' : 'Practice') + ' added for ' + fmtDate(e.date));
   };
   $('#attendDoneBtn').onclick = () => { S.selectedEventId = null; save(); renderAttend(); };
+  document.querySelectorAll('#attSortSeg button').forEach(b => b.onclick = () => { S.attSort = b.dataset.sort; save(); renderAttend(); });
   document.querySelectorAll('#attSeg button').forEach(b => b.onclick = () => { S.attView = b.dataset.v; save(); renderSeason(); });
   document.querySelectorAll('#seasonSeg button').forEach(b => b.onclick = () => { S.seasonSort = b.dataset.sort; save(); renderSeason(); });
   $('#seasonCopyBtn').onclick = async () => {
