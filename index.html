@@ -231,7 +231,8 @@
         <div id="lineupActions">
           <div class="onfield" id="onFieldInfo"></div>
         <div class="muted small" id="needLine" style="text-align:center;margin:-4px 0 8px"></div>
-          <button class="btn primary record" id="recordBtn">Record Play</button>
+          <button class="btn small" id="noCountBtn" style="width:100%;margin-bottom:6px">Next play is a punt or PAT (no count)</button>
+        <button class="btn primary record" id="recordBtn">Record Play</button>
         </div>
         <div class="row" style="margin-top:8px">
           <button class="btn grow" id="undoBtn">Undo</button>
@@ -249,6 +250,7 @@
         <div class="row wrap">
           <input id="dateEdit" type="date">
           <input id="oppEdit" placeholder="Opponent" class="grow">
+          <button class="btn" id="playoffBtn">Playoff</button>
           <button class="btn" id="halfBtn">Halftime</button>
           <button class="btn" id="endGameBtn">Leave</button>
           <button class="btn primary" id="finalBtn">Game Final</button>
@@ -277,6 +279,7 @@
         <button class="btn grow" id="copyBtn">Copy Summary</button>
         <button class="btn grow" id="shareBtn">Share</button>
         <button class="btn grow" id="csvBtn">Download CSV</button>
+        <button class="btn grow" id="sheet72Btn">Copy min play sheet</button>
       </div>
     </div>
   </section>
@@ -495,7 +498,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.12.15';
+  const APP_VERSION = '2026.09.12.16';
   // Shared team database. Baked in once the project exists; Settings can override.
   const SYNC_URL = '';
   const SYNC_KEY = '';
@@ -517,6 +520,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // Unit names the coaches actually use. Misspellings are corrected, missing ones are created empty.
   var UNIT_NAMES = ['HAWK', 'VIPER', 'HAMMER', 'MIXED'];
   var UNIT_FIXES = { MEXED: 'MIXED', MIX: 'MIXED' };
+  // Over 105 lb at the combine. The official weigh-in decides; coaches can flip it on the Roster tab.
+  var SEED_LIMITED = ['Bongiorno', 'Olsen', 'Strand'];
   // [lastName, size, speed, agility, power] as percentile ranks across the grade.
   // Derived from the combine sheet. Raw weights and times are deliberately not shipped.
   var ATHLETE = [
@@ -658,6 +663,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         S.units.push({ id: uid(), name: n, team: 'White', members: [], pos: {}, layout: {} }); touched = true;
       }
     });
+    S.roster.forEach(pl => { if (pl.limited === undefined && SEED_LIMITED.indexOf(lastName(pl)) >= 0) { pl.limited = true; touched = true; } });
     S.roster.forEach(pl => {
       if (teamOf(pl) !== 'White' || (pl.num !== '' && pl.num != null)) return;
       const n = SEED_NUMS[lastName(pl)];
@@ -706,6 +712,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     attSort: 'number',   // check list order: number, name, absent
     seasonSort: 'lowest',
     seasonOpen: null,    // player whose missed dates are expanded
+    nextNoCount: false,  // next recorded play is a punt / PAT / kneel and will not count
     deviceId: '',        // this phone, so shared play rows know who counted them
     outbox: [],          // rows waiting to reach the shared database
     syncSince: {},       // last server timestamp seen per table
@@ -730,7 +737,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (!st.deviceId) st.deviceId = uid() + uid();
         st.events.forEach(e => {
           if (!e.rows) e.rows = (e.plays || []).map((pl, i) => ({ id: uid() + uid(), players: pl.slice(), dev: st.deviceId, seq: i, t: 0, del: false }));
-          e.plays = e.rows.filter(r => !r.del).map(r => r.players.slice());
+          e.plays = e.rows.filter(r => !r.del && !r.nq).map(r => r.players.slice());
         });
         return st;
       }
@@ -739,7 +746,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     } catch (e) { console.warn('load failed', e); }
     const fresh = defaults(); fresh.deviceId = uid() + uid(); return fresh;
   }
-  function syncPlaysView(e) { e.plays = (e.rows || []).filter(r => !r.del).map(r => r.players.slice()); }
+  function syncPlaysView(e) { e.plays = (e.rows || []).filter(r => !r.del && !r.nq).map(r => r.players.slice()); e.noCount = (e.rows || []).filter(r => !r.del && r.nq).length; }
   function applyLink() {
     const w = rosterFromLink('r'), b = rosterFromLink('b');
     if (!w && !b) return;
@@ -794,9 +801,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (e) e.plays.forEach(pl => pl.forEach(id => { if (id in c) c[id]++; }));
     return c;
   }
+  let activeMin = 14;
+  function minFor(g) { return (g && g.playoff) ? 12 : S.minPlays; }
   function level(count) {
-    if (!S.minPlays || count >= S.minPlays) return 'ok';
-    return count >= S.minPlays * 0.5 ? 'mid' : 'low';
+    if (!activeMin || count >= activeMin) return 'ok';
+    return count >= activeMin * 0.5 ? 'mid' : 'low';
   }
   function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function fmtDate(s) {
@@ -821,7 +830,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function renderHeader() {
     const g = curGame();
     $('#hdrSub').textContent = g ? S.team + ' · ' + evLabel(g) + ' · ' + fmtDate(g.date) : S.team + ' team';
-    $('#hdrRight').textContent = g ? (S.mode === 'tap' ? g.plays.length + ' taps' : 'Play ' + g.plays.length) : 'v' + APP_VERSION;
+    $('#hdrRight').textContent = g ? ((S.mode === 'tap' ? g.plays.length + ' taps' : 'Play ' + g.plays.length) + (g.noCount ? ' +' + g.noCount + ' nc' : '')) : 'v' + APP_VERSION;
     document.title = 'DJFL 4';
   }
 
@@ -857,6 +866,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#allOnBtn').style.display = tap ? 'none' : '';
     renderUnitRow(g, tap);
 
+    activeMin = minFor(g);
     const counts = countsFor(g);
     const au = S.units.find(u => u.id === S.activeUnitId);
     const grid = $('#playerGrid'); grid.innerHTML = '';
@@ -901,27 +911,34 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#focusBtn').textContent = S.focus ? 'Show all' : 'Focus';
     const offField = presentRoster(g).filter(p => S.lineup.indexOf(p.id) < 0)
       .sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b)).slice(0, 3);
-    const under = presentRoster(g).filter(p => counts[p.id] < S.minPlays).length;
+    const under = presentRoster(g).filter(p => counts[p.id] < activeMin).length;
     const recentDevs = {};
     (g.rows || []).forEach(r => { if (!r.del && r.t && Date.now() - r.t < 90000) recentDevs[r.dev || '?'] = 1; });
     const multi = Object.keys(recentDevs).length > 1 ? '<div style="color:var(--red);font-weight:700;margin-bottom:4px">Two phones are counting this game. Counts will double.</div>' : '';
     $('#needLine').innerHTML = multi + (g.plays.length && offField.length
       ? '<span style="color:var(--amber)">Next in:</span> ' + esc(offField.map(p => lastName(p) + ' ' + counts[p.id]).join(' · ')) +
-        (under ? ' <span style="color:var(--red)">· ' + under + ' under ' + S.minPlays + '</span>' : '')
+        (under ? ' <span style="color:var(--red)">· ' + under + ' under ' + activeMin + '</span>' : '')
       : '');
     $('#recordBtn').disabled = n === 0;
-    $('#recordBtn').textContent = 'Record Play ' + (g.plays.length + 1);
+    $('#recordBtn').textContent = S.nextNoCount ? 'Record (no count)' : 'Record Play ' + (g.plays.length + 1);
+    $('#noCountBtn').textContent = S.nextNoCount ? 'NEXT PLAY WILL NOT COUNT · tap to cancel' : 'Next play is a punt or PAT (no count)';
+    $('#noCountBtn').classList.toggle('primary', !!S.nextNoCount);
     $('#undoBtn').disabled = g.plays.length === 0;
     if (document.activeElement !== $('#oppEdit')) $('#oppEdit').value = g.opponent || '';
     $('#dateEdit').value = g.date;
     $('#halfBtn').textContent = typeof g.half === 'number' ? 'Undo halftime' : 'Halftime';
+    $('#playoffBtn').textContent = g.playoff ? 'Playoff: min 12' : 'Playoff';
+    $('#playoffBtn').classList.toggle('primary', !!g.playoff);
 
     const log = $('#playLog');
-    if (!g.plays.length) { log.innerHTML = '<div class="muted">No plays yet.</div>'; return; }
-    log.innerHTML = g.plays.map((pl, i) =>
-      (typeof g.half === 'number' && g.half === i ? '<div style="color:var(--accent);font-weight:700;text-align:center">— Halftime —</div>' : '') +
-      '<div><b>#' + (i + 1) + '</b> · ' + pl.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(', ') + '</div>'
-    ).reverse().join('') + (typeof g.half === 'number' && g.half === g.plays.length ? '<div style="color:var(--accent);font-weight:700;text-align:center">— Halftime —</div>' : '');
+    const live = (g.rows || []).filter(r => !r.del);
+    if (!live.length) { log.innerHTML = '<div class="muted">No plays yet.</div>'; return; }
+    let qn = 0;
+    log.innerHTML = live.map(r => {
+      const idx = r.nq ? null : ++qn;
+      return (typeof g.half === 'number' && idx !== null && g.half === idx - 1 ? '<div style="color:var(--accent);font-weight:700;text-align:center">— Halftime —</div>' : '') +
+        '<div' + (r.nq ? ' style="opacity:.6"' : '') + '><b>' + (r.nq ? 'no count' : '#' + idx) + '</b> · ' + r.players.map(id => player(id) ? esc(numStr(player(id)) || player(id).name) : '?').join(', ') + '</div>';
+    }).reverse().join('') + (typeof g.half === 'number' && g.half === g.plays.length ? '<div style="color:var(--accent);font-weight:700;text-align:center">— Halftime —</div>' : '');
   }
 
 
@@ -1016,8 +1033,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const mir = mirrorPos(pos);
     const grp = posGroup(pos);
     const list = [];
+    const interior = fitKind(pos) === 'interior';
     presentRoster(g).forEach(p => {
       if (onField.indexOf(p.id) >= 0) return;
+      if (p.limited && pos && !interior) return;   // rule 8.1: limited players only at DG/DT/OG/OT/C
       const ps = positionsOf(p.id);
       let tier = 3, why = 'not on the chart';
       if (pos && ps.indexOf(pos) >= 0) { tier = 0; why = 'plays ' + pos; }
@@ -1035,6 +1054,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function openSub(id) {
     const g = curGame(); if (!g) return;
     const p = player(id); if (!p) return;
+    activeMin = minFor(g);
     subOutId = id;
     const au = S.units.find(u => u.id === S.activeUnitId);
     const pos = (au && au.pos && au.pos[id]) || (positionsOf(id)[0] || '');
@@ -1048,7 +1068,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     cands.forEach(c => {
       const b = document.createElement('button');
       b.className = 'cand';
-      b.innerHTML = '<span class="nm">' + esc((numStr(c.p) ? numStr(c.p) + '  ' : '') + c.p.name) +
+      b.innerHTML = '<span class="nm">' + esc((numStr(c.p) ? numStr(c.p) + '  ' : '') + c.p.name) + (c.p.limited ? ' <span class="why" style="background:rgba(251,191,36,.18);color:var(--amber)">LTD</span>' : '') +
         '<br><span class="why t' + c.tier + '">' + esc(c.why) + '</span></span>' +
         '<span class="pcnt" style="color:' + fitColour(c.fit) + '">' + (c.fit === null ? 'no data' : 'fit ' + c.fit) + '</span>' +
         '<span class="pcnt" style="color:' + (level(c.plays) === 'low' ? 'var(--red)' : level(c.plays) === 'mid' ? 'var(--amber)' : 'var(--green)') + '">' + c.plays + ' pl</span>';
@@ -1140,7 +1160,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const pos = keep;
     const onChart = {};
     myUnits().forEach(u => { if (u.pos) Object.keys(u.pos).forEach(id => { if (u.pos[id] === pos) onChart[id] = u.name; }); });
-    const ranked = sortRoster(gameRoster()).map(p => ({ p: p, fit: fitScore(p, pos), unit: onChart[p.id] }))
+    const interior = fitKind(pos) === 'interior';
+    const ranked = sortRoster(gameRoster()).filter(p => !(p.limited && !interior)).map(p => ({ p: p, fit: fitScore(p, pos), unit: onChart[p.id] }))
       .sort((a, b) => (b.fit === null ? -1 : a.fit === null ? 1 : b.fit - a.fit));
     $('#fitList').innerHTML = ranked.slice(0, 10).map(r =>
       '<div class="crow"><span class="pname">' + (r.unit ? '★ ' : '') + esc(r.p.name) +
@@ -1417,7 +1438,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const g = lastGame();
     const list = $('#countList');
     if (!g) { list.innerHTML = '<div class="empty">No game yet. Start one on the Game tab.</div>'; $('#countStats').innerHTML = ''; return; }
-    $('#countTitle').innerHTML = esc(evLabel(g)) + ' · ' + fmtDate(g.date) + (g.final ? ' · <span style="color:var(--green)">FINAL</span>' : '');
+    activeMin = minFor(g);
+    $('#countTitle').innerHTML = esc(evLabel(g)) + ' · ' + fmtDate(g.date) + (g.playoff ? ' · <span style="color:var(--amber)">PLAYOFF, MIN 12</span>' : '') + (g.final ? ' · <span style="color:var(--green)">FINAL</span>' : '');
     const counts = countsFor(g);
     const ros = presentRoster(g);
     document.querySelectorAll('#countSeg button').forEach(b => b.classList.toggle('active', b.dataset.sort === S.countSort));
@@ -1428,18 +1450,18 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       if (S.countSort === 'name') return byName(a, b);
       return counts[a.id] - counts[b.id] || num(a) - num(b);
     });
-    const below = sorted.filter(p => counts[p.id] < S.minPlays).length;
+    const below = sorted.filter(p => counts[p.id] < activeMin).length;
     const done = sorted.length - below;
-    const max = Math.max(S.minPlays, 1, ...sorted.map(p => counts[p.id]));
+    const max = Math.max(activeMin, 1, ...sorted.map(p => counts[p.id]));
     $('#countStats').innerHTML =
       '<div><div class="v">' + g.plays.length + '</div><div class="l">' + (S.mode === 'tap' ? 'Taps' : 'Plays') + '</div></div>' +
       '<div><div class="v">' + ros.length + '</div><div class="l">Present</div></div>' +
-      '<div><div class="v" style="color:' + (below ? 'var(--red)' : 'var(--green)') + '">' + below + '</div><div class="l">Below ' + S.minPlays + '</div></div>' +
-      '<div><div class="v" style="color:var(--green)">' + done + '</div><div class="l">At ' + S.minPlays + '</div></div>';
+      '<div><div class="v" style="color:' + (below ? 'var(--red)' : 'var(--green)') + '">' + below + '</div><div class="l">Below ' + activeMin + '</div></div>' +
+      '<div><div class="v" style="color:var(--green)">' + done + '</div><div class="l">At ' + activeMin + '</div></div>';
     const h1 = {};
     if (typeof g.half === 'number') g.plays.slice(0, g.half).forEach(pl => pl.forEach(id => { h1[id] = (h1[id] || 0) + 1; }));
     list.innerHTML = sorted.map(p => {
-      const c = counts[p.id], need = S.minPlays - c;
+      const c = counts[p.id], need = activeMin - c;
       const halves = typeof g.half === 'number' ? '<span class="need" style="color:var(--muted)">H1 ' + (h1[p.id] || 0) + ' · H2 ' + (c - (h1[p.id] || 0)) + '</span>' : '';
       return '<div class="crow ' + level(c) + '">' +
         '<span class="pn">' + esc(numStr(p)) + '</span><span class="pname">' + esc(p.name) + '</span>' +
@@ -1609,9 +1631,16 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       row.innerHTML =
         '<input class="n" type="number" inputmode="numeric" value="' + esc(numStr(p)) + '" placeholder="#">' +
         '<input class="grow nm" value="' + esc(p.name) + '" placeholder="Name">' +
-        '<button class="btn small danger del">✕</button>';
+        '<button class="btn small ltd" title="Limited: over 105 lb, interior line only" style="min-width:48px' + (p.limited ? ';background:rgba(251,191,36,.18);color:var(--amber);border-color:var(--amber)' : '') + '">LTD</button>' +
+        '<button class="btn small danger del">✕</button>' +
+        (teamOf(p) === S.team ? '<select class="role" style="width:100%;margin-top:4px;min-height:36px;font-size:14px">' +
+          [['', 'Role on the min play sheet…'], ['2way', 'Two-way starter'], ['off', 'Offense-only starter'], ['def', 'Defense-only starter'], ['sub', 'Substitute'], ['k', 'Place kicker only']]
+            .map(o => '<option value="' + o[0] + '"' + ((p.role || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>' : '');
+      row.style.flexWrap = 'wrap';
       row.querySelector('.n').onchange = (e) => { p.num = e.target.value === '' ? '' : Number(e.target.value); save(); render(); };
       row.querySelector('.nm').onchange = (e) => { p.name = e.target.value.trim() || p.name; save(); render(); };
+      row.querySelector('.ltd').onclick = () => { p.limited = !p.limited; save(); render(); };
+      const rsel = row.querySelector('.role'); if (rsel) rsel.onchange = (e) => { p.role = e.target.value; save(); };
       row.querySelector('.del').onclick = () => ask('Remove ' + p.name + ' from the roster? Their past plays and attendance are dropped from the reports.', () => {
         S.roster = S.roster.filter(x => x.id !== p.id); S.lineup = S.lineup.filter(i => i !== p.id);
         S.events.forEach(e => e.present = e.present.filter(i => i !== p.id));
@@ -1656,7 +1685,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function addPlayRow(g, ids) {
     if (!g.rows) g.rows = [];
-    const row = { id: uid() + uid(), players: ids.slice(), dev: S.deviceId, seq: g.rows.length, t: Date.now(), del: false };
+    const row = { id: uid() + uid(), players: ids.slice(), dev: S.deviceId, seq: g.rows.length, t: Date.now(), del: false, nq: !!S.nextNoCount };
+    S.nextNoCount = false;
     g.rows.push(row); syncPlaysView(g); pushPlay(g, row);
     return row;
   }
@@ -1731,12 +1761,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function pushEvent(e) {
     if (!syncOn()) return;
-    enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: (typeof e.half === 'number') ? e.half : null, final: !!e.final, deleted: false });
+    enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: (typeof e.half === 'number') ? e.half : null, final: !!e.final, playoff: !!e.playoff, deleted: false });
   }
   function pushEventDeleted(e) { if (syncOn()) enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: null, deleted: true }); }
   function pushAttendanceRow(e, playerId, present) { if (syncOn()) enqueue('djfl_attendance', { event_id: e.id, player_id: playerId, present: !!present }); }
   function pushAllAttendance(e) { if (!syncOn()) return; poolFor(e).forEach(pl => enqueue('djfl_attendance', { event_id: e.id, player_id: pl.id, present: e.present.indexOf(pl.id) >= 0 })); }
-  function pushPlay(g, row) { if (syncOn()) enqueue('djfl_plays', { id: row.id, game_id: g.id, players: row.players, device: row.dev || S.deviceId, seq: row.seq || 0, deleted: !!row.del }); }
+  function pushPlay(g, row) { if (syncOn()) enqueue('djfl_plays', { id: row.id, game_id: g.id, players: row.players, device: row.dev || S.deviceId, seq: row.seq || 0, deleted: !!row.del, qualifying: !row.nq }); }
   function pushEverything() {
     enqueueConfig();
     S.events.forEach(e => { pushEvent(e); pushAllAttendance(e); (e.rows || []).forEach(r => pushPlay(e, r)); });
@@ -1783,7 +1813,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           return;
         }
         if (i < 0) {
-          S.events.push({ id: r.id, type: r.type, team: r.team || undefined, date: r.date, opponent: r.opponent || '', present: [], plays: [], rows: [], half: (r.half == null ? undefined : r.half), final: !!r.final });
+          S.events.push({ id: r.id, type: r.type, team: r.team || undefined, date: r.date, opponent: r.opponent || '', present: [], plays: [], rows: [], half: (r.half == null ? undefined : r.half), final: !!r.final, playoff: !!r.playoff });
           changed = true;
         } else {
           const e = S.events[i];
@@ -1791,6 +1821,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           e.date = r.date; e.opponent = r.opponent || ''; e.type = r.type; if (r.team) e.team = r.team;
           const nh = (r.half == null ? undefined : r.half);
           if (e.half !== nh) { if (nh === undefined) delete e.half; else e.half = nh; changed = true; }
+          if (!!e.playoff !== !!r.playoff) { e.playoff = !!r.playoff; changed = true; }
           if (!!e.final !== !!r.final) { e.final = !!r.final; changed = true; if (e.final && S.currentGameId === e.id) { S.currentGameId = null; S.lineup = []; } }
         }
       });
@@ -1806,7 +1837,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       rows.forEach(r => {
         const g = S.events.find(x => x.id === r.game_id); if (!g) return;
         if (!g.rows) g.rows = [];
-        const local = { id: r.id, players: Array.isArray(r.players) ? r.players : [], dev: r.device || '', seq: r.seq || 0, t: Date.parse(r.created_at) || 0, del: !!r.deleted };
+        const local = { id: r.id, players: Array.isArray(r.players) ? r.players : [], dev: r.device || '', seq: r.seq || 0, t: Date.parse(r.created_at) || 0, del: !!r.deleted, nq: r.qualifying === false };
         const i = g.rows.findIndex(x => x.id === r.id);
         if (i < 0) { g.rows.push(local); changed = true; }
         else if (JSON.stringify(g.rows[i]) !== JSON.stringify(local)) { g.rows[i] = local; changed = true; }
@@ -1917,13 +1948,28 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // ---------- share / export ----------
   function summaryText() {
     const g = lastGame(); if (!g) return '';
+    activeMin = minFor(g);
     const c = countsFor(g);
     const ros = presentRoster(g).sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
-    const lines = [(g.final ? 'FINAL · ' : '') + S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
-    ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < S.minPlays ? ' (needs ' + (S.minPlays - c[p.id]) + ')' : '')));
+    const lines = [(g.final ? 'FINAL · ' : '') + (g.playoff ? 'PLAYOFF (min 12) · ' : '') + S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
+    ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < activeMin ? ' (needs ' + (activeMin - c[p.id]) + ')' : '')));
     const absent = teamRoster(eventTeam(g)).filter(p => !g.present.includes(p.id));
     if (absent.length) lines.push('Absent: ' + sortRoster(absent).map(p => p.name).join(', '));
     return lines.join('\n');
+  }
+  function minPlaySheetText() {
+    const g = lastGame();
+    const groups = [['2way', 'Two-way starters'], ['off', 'Offense-only starters'], ['def', 'Defense-only starters'], ['sub', 'Substitutes'], ['k', 'Place kicker only'], ['', 'Not yet assigned']];
+    const ros = sortRoster(g ? presentRoster(g) : gameRoster());
+    const out = [S.team + ' minimum play sheet' + (g ? ' · ' + evLabel(g) + ' · ' + fmtDate(g.date) : ''), 'Limited players marked LTD (interior line only).', ''];
+    groups.forEach(gr => {
+      const list = ros.filter(p => (p.role || '') === gr[0]);
+      if (!list.length) return;
+      out.push(gr[1] + ' (' + list.length + ')');
+      list.forEach(p => out.push('  ' + (numStr(p) ? '#' + numStr(p) + ' ' : '') + p.name + (p.limited ? '  LTD' : '')));
+      out.push('');
+    });
+    return out.join('\n').trim();
   }
   function csvText() {
     const g = lastGame(); if (!g) return '';
@@ -1967,10 +2013,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#startGameBtn').onclick = () => { const g = addEvent('game', $('#newDate').value, $('#oppInput').value); $('#oppInput').value = ''; openGame(g.id); };
   $('#oppInput').onkeydown = (e) => { if (e.key === 'Enter') $('#startGameBtn').click(); };
   $('#recordBtn').onclick = recordPlay;
+  $('#noCountBtn').onclick = () => { S.nextNoCount = !S.nextNoCount; save(); renderGame(); };
   $('#undoBtn').onclick = undo;
   $('#clearSelBtn').onclick = () => { S.lineup = []; S.activeUnitId = null; save(); renderGame(); };
   $('#oppEdit').onchange = (e) => { const g = curGame(); if (g) { g.opponent = e.target.value.trim(); pushEvent(g); save(); render(); } };
   $('#dateEdit').onchange = (e) => { const g = curGame(); if (g && e.target.value) { g.date = e.target.value; pushEvent(g); save(); render(); } };
+  $('#playoffBtn').onclick = () => { const g = curGame(); if (!g) return; g.playoff = !g.playoff; pushEvent(g); save(); render(); toast(g.playoff ? 'Playoff game: minimum is 12' : 'Regular season: minimum is ' + S.minPlays); };
   $('#halfBtn').onclick = () => {
     const g = curGame(); if (!g) return;
     if (typeof g.half === 'number') { delete g.half; toast('Halftime marker removed'); }
@@ -2096,6 +2144,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (navigator.share) { try { await navigator.share({ title: S.team + ' play counts', text: t }); } catch (err) { /* cancelled */ } }
     else $('#copyBtn').click();
   };
+  $('#sheet72Btn').onclick = async () => { const t = minPlaySheetText(); try { await navigator.clipboard.writeText(t); toast('Min play sheet copied'); } catch (err) { window.prompt('Copy this:', t); } };
   $('#csvBtn').onclick = () => { const t = csvText(); if (!t) return toast('No game yet'); download(S.team + '-playcount-' + lastGame().date + '.csv', t, 'text/csv'); };
 
   $('#exportBtn').onclick = () => download(S.team + '-playcount-backup-' + today() + '.json', JSON.stringify(S, null, 2), 'application/json');

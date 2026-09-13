@@ -27,6 +27,14 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
 5. **Settings.** **My team** is a White or Blue switch that decides which team the game side belongs to. Games, play counts, units and the Counts tab all follow it, and each game and unit remembers the team that created it, so the two never mix. Practice attendance always covers both teams. That means either coach can use the same app and simply flip the switch. Also holds minimum plays per game and players on field. Season play totals. Backup and Restore move the data between phones.
    **Google Sheet.** Paste the web app link from `apps-script.gs` deployed on your attendance spreadsheet, then use Send a test row to check it. After that, Send to Sheet on the Attendance tab writes that session straight into your grid, finding or creating a column for the date and marking each player. Setup instructions are in the comments at the top of `apps-script.gs`.
 
+## League rules built in (FCFL 2026, 4th grade)
+
+- **14 qualifying plays** in the regular season, **12 in playoffs**. The Playoff button in the game card switches a game to 12 and every count, colour and warning follows it.
+- **Punts, PATs and kneel-downs do not count.** Tap "Next play is a punt or PAT" before recording and that snap is logged but not counted. The header shows how many no-count snaps there were.
+- **Limited players** (over 105 lb at weigh-in) may only play DG, DT, OG, OT or C. Mark them with the LTD button on the Roster tab. The substitution sheet and the Best-fit board never offer a limited player anywhere else. Bongiorno, Olsen and Strand start marked from the combine weights; the official weigh-in decides.
+- **Minimum play sheet (rule 7.2).** Each White player can be given a role on the Roster tab: two-way starter, offense-only, defense-only, substitute, or place kicker only. Copy min play sheet on the Counts tab produces the sheet to hand to the opposing coach, with limited players marked.
+- The end-of-second- and third-quarter reviews use the Counts tab, which always shows who is under the minimum.
+
 ## Team sync: one shared game for every coach
 
 Without sync, each phone is its own island. With it, every coach sees the same counts, attendance, roster and units, live. It runs on a free Supabase project that you own.

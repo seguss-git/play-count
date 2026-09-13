@@ -15,6 +15,7 @@ create table if not exists djfl_events (
   opponent    text not null default '',
   half        integer,
   final       boolean not null default false,
+  playoff     boolean not null default false,
   deleted     boolean not null default false,
   updated_at  timestamptz not null default now()
 );
@@ -33,6 +34,7 @@ create table if not exists djfl_plays (
   players     jsonb not null,
   device      text,
   seq         integer not null default 0,
+  qualifying  boolean not null default true,
   deleted     boolean not null default false,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
@@ -40,6 +42,8 @@ create table if not exists djfl_plays (
 
 -- safe to re-run on a project created before this column existed
 alter table djfl_events add column if not exists final boolean not null default false;
+alter table djfl_events add column if not exists playoff boolean not null default false;
+alter table djfl_plays  add column if not exists qualifying boolean not null default true;
 
 create index if not exists djfl_plays_game on djfl_plays (game_id);
 create index if not exists djfl_events_upd on djfl_events (updated_at);
