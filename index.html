@@ -424,15 +424,6 @@
       <div id="rosterList"></div>
       <div class="row" style="margin-top:10px" id="loadTeamRow"><button class="btn small" id="loadTeamBtn">Load team roster</button><span class="muted small">Re-adds anyone from your team link who is missing.</span></div>
     </div>
-    <div class="card" id="fitCard">
-      <h2>Best fit by position <span class="muted plain">(from combine testing)</span></h2>
-      <div class="seg" id="fitSideSeg" style="margin:0 0 6px"><button data-side="def">Defense</button><button data-side="off">Offense</button></div>
-      <div class="row" style="margin-bottom:6px">
-        <select id="fitPos" class="grow"></select>
-      </div>
-      <div id="fitList"></div>
-      <p class="muted small" style="margin:8px 0 0">Ranked on 40 time, 5-10-5, 3-cone, broad jump and weight, weighted for that spot. A star marks someone already on the chart there.</p>
-    </div>
     <div class="card" id="unitsCard">
       <h2><span id="unitsHead">Units</span> <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
       <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
@@ -441,6 +432,15 @@
         <button class="btn small" id="newUnitBtn">New unit</button>
         <button class="btn small" id="chartBtn">Import unit chart</button>
       </div>
+    </div>
+    <div class="card" id="fitCard">
+      <h2>Best fit by position <span class="muted plain">(from combine testing)</span></h2>
+      <div class="seg" id="fitSideSeg" style="margin:0 0 6px"><button data-side="def">Defense</button><button data-side="off">Offense</button></div>
+      <div class="row" style="margin-bottom:6px">
+        <select id="fitPos" class="grow"></select>
+      </div>
+      <div id="fitList"></div>
+      <p class="muted small" style="margin:8px 0 0">Ranked on 40 time, 5-10-5, 3-cone, broad jump and weight, weighted for that spot. A star marks someone already on the chart there.</p>
     </div>
   </section>
 
@@ -584,7 +584,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.8';
+  const APP_VERSION = '2026.09.14.9';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
