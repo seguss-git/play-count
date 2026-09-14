@@ -424,15 +424,16 @@
       <div id="rosterList"></div>
       <div class="row" style="margin-top:10px" id="loadTeamRow"><button class="btn small" id="loadTeamBtn">Load team roster</button><span class="muted small">Re-adds anyone from your team link who is missing.</span></div>
     </div>
-    <div class="card">
+    <div class="card" id="fitCard">
       <h2>Best fit by position <span class="muted plain">(from combine testing)</span></h2>
+      <div class="seg" id="fitSideSeg" style="margin:0 0 6px"><button data-side="def">Defense</button><button data-side="off">Offense</button></div>
       <div class="row" style="margin-bottom:6px">
         <select id="fitPos" class="grow"></select>
       </div>
       <div id="fitList"></div>
       <p class="muted small" style="margin:8px 0 0">Ranked on 40 time, 5-10-5, 3-cone, broad jump and weight, weighted for that spot. A star marks someone already on the chart there.</p>
     </div>
-    <div class="card">
+    <div class="card" id="unitsCard">
       <h2>Units <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
       <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
       <div id="unitList" class="ulist"></div>
@@ -583,7 +584,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.6';
+  const APP_VERSION = '2026.09.14.7';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -668,6 +669,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     corner:     { speed: 0.45, agility: 0.35, power: 0.20, size: 0.00 },
     safety:     { speed: 0.35, agility: 0.30, power: 0.20, size: 0.15 },
     skill:      { speed: 0.35, agility: 0.30, power: 0.25, size: 0.10 },
+    // Offence. Nothing here measures hands or throwing, only the combine numbers.
+    receiver:   { speed: 0.45, agility: 0.35, power: 0.10, size: 0.10 },
+    tightend:   { size: 0.25, power: 0.25, agility: 0.25, speed: 0.25 },
+    quarterback:{ agility: 0.35, speed: 0.25, power: 0.20, size: 0.20 },
+    back:       { power: 0.35, speed: 0.25, agility: 0.25, size: 0.15 },
     other:      { speed: 0.25, agility: 0.25, power: 0.25, size: 0.25 }
   };
 
@@ -1527,7 +1533,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (/^(MLB|OLB|ILB|LB)$/.test(q)) return 'linebacker';
     if (/^(CB|DB)$/.test(q)) return 'corner';
     if (/^(S|SS|FS|SAFETY)$/.test(q)) return 'safety';
-    if (/^(X|Z|H\/Y|H|Y|UB|WR|TE|SE|FL|RB|FB|HB|QB)$/.test(q)) return 'skill';
+    if (/^(X|Z|WR|SE|FL)$/.test(q)) return 'receiver';
+    if (/^(H\/Y|H|Y|TE)$/.test(q)) return 'tightend';
+    if (q === 'QB') return 'quarterback';
+    if (/^(UB|FB|RB|HB|TB)$/.test(q)) return 'back';
     return 'other';
   }
   function fitScore(pl, pos) {
@@ -1634,7 +1643,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function renderFitBoard() {
     const sel = $('#fitPos');
-    const list = allPositions();
+    const side = S.fitSide === 'off' ? 'off' : 'def';
+    document.querySelectorAll('#fitSideSeg button').forEach(b => b.classList.toggle('active', b.dataset.side === side));
+    // The side's standard spots, plus any other spot a unit on that side uses.
+    const list = SIDE_POSITIONS[side].slice();
+    allPositions().forEach(q => { if (list.indexOf(q) < 0 && posSideOf(q) === side) list.push(q); });
     if (!list.length) { sel.innerHTML = '<option>No positions yet</option>'; $('#fitList').innerHTML = '<div class="empty">Import a unit chart to see this.</div>'; return; }
     const keep = sel.value && list.indexOf(sel.value) >= 0 ? sel.value : list[0];
     sel.innerHTML = list.map(q => '<option' + (q === keep ? ' selected' : '') + '>' + esc(q) + '</option>').join('');
@@ -2125,6 +2138,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       ? 'Your team. Games, play counts and units all use this list.'
       : 'The other team. These players show up only in <b>practice</b> attendance, never in your games or play counts.';
     $('#loadTeamRow').style.display = (t === 'White' ? S.template : S.templateB).length ? '' : 'none';
+    // Best fit, units and the limited flag belong to the game team; the other team is practice attendance only.
+    const gameTeam = t === S.team;
+    $('#fitCard').style.display = gameTeam ? '' : 'none';
+    $('#unitsCard').style.display = gameTeam ? '' : 'none';
     const ros = sortRoster(teamRoster(t));
     $('#rosterCount').textContent = ros.length ? '(' + ros.length + ')' : '';
     if (!ros.length) { list.innerHTML = '<div class="empty">No ' + t + ' players yet. Paste them into the box above.</div>'; return; }
@@ -2134,7 +2151,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       row.innerHTML =
         '<input class="n" type="number" inputmode="numeric" value="' + esc(numStr(p)) + '" placeholder="#">' +
         '<input class="grow nm" value="' + esc(p.name) + '" placeholder="Name">' +
-        '<button class="btn small ltd" title="Limited: over 105 lb, interior line only" style="min-width:48px' + (p.limited ? ';background:rgba(251,191,36,.18);color:var(--amber);border-color:var(--amber)' : '') + '">LTD</button>' +
+        (gameTeam ? '<button class="btn small ltd" title="Limited: over 105 lb, interior line only" style="min-width:48px' + (p.limited ? ';background:rgba(251,191,36,.18);color:var(--amber);border-color:var(--amber)' : '') + '">LTD</button>' : '') +
         '<button class="btn small danger del">✕</button>' +
         (teamOf(p) === S.team ? '<select class="role" style="width:100%;margin-top:4px;min-height:36px;font-size:14px">' +
           [['', 'Role on the min play sheet…'], ['2way', 'Two-way starter'], ['off', 'Offense-only starter'], ['def', 'Defense-only starter'], ['sub', 'Substitute'], ['k', 'Place kicker only']]
@@ -2142,7 +2159,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       row.style.flexWrap = 'wrap';
       row.querySelector('.n').onchange = (e) => { p.num = e.target.value === '' ? '' : Number(e.target.value); save(); render(); };
       row.querySelector('.nm').onchange = (e) => { p.name = e.target.value.trim() || p.name; save(); render(); };
-      row.querySelector('.ltd').onclick = () => { p.limited = !p.limited; save(); render(); };
+      const ltd = row.querySelector('.ltd'); if (ltd) ltd.onclick = () => { p.limited = !p.limited; save(); render(); };
       const rsel = row.querySelector('.role'); if (rsel) rsel.onchange = (e) => { p.role = e.target.value; save(); };
       row.querySelector('.del').onclick = () => ask('Remove ' + p.name + ' from the roster? Their past plays and attendance are dropped from the reports.', () => {
         S.roster = S.roster.filter(x => x.id !== p.id); S.lineup = S.lineup.filter(i => i !== p.id);
@@ -2876,6 +2893,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   };
   $('#loadTeamBtn').onclick = loadTeamRoster;
   $('#fitPos').onchange = renderFitBoard;
+  document.querySelectorAll('#fitSideSeg button').forEach(b => b.onclick = () => { S.fitSide = b.dataset.side; save(); renderFitBoard(); });
   $('#newUnitBtn').onclick = () => openUnitEditor(null, lineupIds());
   $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('chart'); $('#chartDlg').showModal(); };
   $('#rosterScanBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('roster'); $('#chartDlg').showModal(); };
