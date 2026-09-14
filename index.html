@@ -174,6 +174,13 @@
   /* Roster, schedule, attendance rows */
   .rrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
   .rrow:last-child { border-bottom: 0; }
+  .swipewrap { position: relative; overflow: hidden; }
+  .swipewrap .swipelabel { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; padding-right: 18px;
+    background: rgba(248,113,113,.22); color: var(--red); font-weight: 800; }
+  .swipewrap.armed .swipelabel { background: var(--red); color: #fff; }
+  .swipewrap > .rrow { position: relative; background: var(--panel); touch-action: pan-y; transition: transform .2s; }
+  .swipewrap > .rrow.sel { background: var(--panel2); margin: 0; }
+  .swipewrap:not(:last-child) > .rrow { border-bottom: 1px solid var(--line); }
   .rrow input.n { width: 64px; text-align: center; }
   .rrow.sel { background: var(--panel2); margin: 0 -8px; padding: 6px 8px; border-radius: 8px; }
   .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--panel2); color: var(--muted); white-space: nowrap; }
@@ -228,7 +235,7 @@
         <p class="muted small" style="margin:8px 0 0">Everyone on the roster is marked present to start. Fix absences on the Attendance tab.</p>
       </div>
       <div class="card">
-        <h2>Or open a game</h2>
+        <h2>Or open a game <span class="muted plain">(swipe left to delete)</span></h2>
         <div id="pickGameList"></div>
       </div>
     </div>
@@ -360,7 +367,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>Schedule <span class="muted plain">(tap one to take attendance)</span></h2>
+      <h2>Schedule <span class="muted plain">(tap to take attendance, swipe left to delete)</span></h2>
       <div id="eventList"></div>
     </div>
     <div id="attendHome"></div>
@@ -584,7 +591,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.9';
+  const APP_VERSION = '2026.09.14.10';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -962,7 +969,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           if (!e.final) return openGame(e.id);
           ask('Reopen this final game? It goes back to counting until you mark it final again.', () => { e.final = false; pushEvent(e); openGame(e.id); });
         };
-        list.appendChild(row);
+        list.appendChild(swipeToDelete(row, () => deleteEvent(e)));
       });
       return;
     }
@@ -1993,6 +2000,60 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     }).join('') || '<div class="empty">Nobody marked present.</div>';
   }
 
+  // Drag a row left past the line and let go to delete it (after a confirm).
+  // Up and down stay with the browser, so lists still scroll normally.
+  function swipeToDelete(row, onDelete) {
+    const wrap = document.createElement('div');
+    wrap.className = 'swipewrap';
+    wrap.innerHTML = '<span class="swipelabel">Delete</span>';
+    wrap.appendChild(row);
+    const LIMIT = 90;
+    let x0 = 0, y0 = 0, dx = 0, id = null, dragging = false;
+    row.addEventListener('pointerdown', ev => {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      x0 = ev.clientX; y0 = ev.clientY; dx = 0; id = ev.pointerId; dragging = false;
+    });
+    row.addEventListener('pointermove', ev => {
+      if (ev.pointerId !== id) return;
+      const mx = ev.clientX - x0, my = ev.clientY - y0;
+      if (!dragging) {
+        if (mx < -12 && Math.abs(mx) > Math.abs(my) * 1.5) {
+          dragging = true; row.style.transition = 'none';
+          try { row.setPointerCapture(id); } catch (e) { /* older browsers */ }
+        } else if (Math.abs(my) > 12 || mx > 12) { id = null; }
+        return;
+      }
+      dx = Math.min(0, mx);
+      row.style.transform = 'translateX(' + dx + 'px)';
+      wrap.classList.toggle('armed', dx < -LIMIT);
+    });
+    const end = ev => {
+      if (ev.pointerId !== id) return;
+      id = null;
+      if (!dragging) return;
+      dragging = false;
+      row.style.transition = ''; row.style.transform = '';
+      wrap.classList.remove('armed');
+      row._swiped = true; setTimeout(() => { row._swiped = false; }, 350);
+      if (dx < -LIMIT) onDelete();
+    };
+    row.addEventListener('pointerup', end);
+    row.addEventListener('pointercancel', end);
+    // The click that ends a swipe must not also press a button in the row.
+    row.addEventListener('click', ev => { if (row._swiped) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+    return wrap;
+  }
+  function deleteEvent(e) {
+    ask('Delete ' + evLabel(e) + ' on ' + fmtDate(e.date) + (e.plays.length ? ' and its ' + e.plays.length + ' plays' : '') + '? This removes it for every coach.', () => {
+      S.events = S.events.filter(x => x.id !== e.id);
+      pushEventDeleted(e);
+      if (S.currentGameId === e.id) { S.currentGameId = null; S.lineup = []; }
+      if (S.selectedEventId === e.id) S.selectedEventId = null;
+      save(); render();
+      toast('Deleted');
+    });
+  }
+
   function renderAttend() {
     if (!$('#evDate').value) $('#evDate').value = today();
     $('#evOpp').style.display = $('#evType').value === 'game' ? '' : 'none';
@@ -2015,19 +2076,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (S.selectedEventId) { const r = $('#eventList .rrow.sel'); if (r && r.scrollIntoView) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
       };
       const open = row.querySelector('.open'); if (open) open.onclick = () => openGame(e.id);
-      row.querySelector('.del').onclick = () => ask('Delete ' + evLabel(e) + ' on ' + fmtDate(e.date) + (e.plays.length ? ' and its ' + e.plays.length + ' plays' : '') + '?', () => {
-        S.events = S.events.filter(x => x.id !== e.id);
-        pushEventDeleted(e);
-        if (S.currentGameId === e.id) S.currentGameId = null;
-        if (S.selectedEventId === e.id) S.selectedEventId = null;
-        save(); render();
-      });
-      list.appendChild(row);
+      row.querySelector('.del').onclick = () => deleteEvent(e);
+      list.appendChild(swipeToDelete(row, () => deleteEvent(e)));
     });
 
     const sel = ev(S.selectedEventId);
     card.style.display = sel ? '' : 'none';
-    if (sel) { const selRow = list.querySelector('.rrow.sel'); if (selRow) selRow.insertAdjacentElement('afterend', card); }
+    if (sel) { const selRow = list.querySelector('.rrow.sel'); if (selRow) (selRow.closest('.swipewrap') || selRow).insertAdjacentElement('afterend', card); }
     if (sel) {
       $('#attendTitle').innerHTML = 'Attendance · ' + fmtDate(sel.date) + ' <span class="plain">' + esc(evLabel(sel)) + '</span>';
       const pool = poolFor(sel);
