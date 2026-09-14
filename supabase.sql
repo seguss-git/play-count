@@ -83,3 +83,7 @@ create policy djfl_anon_config     on djfl_config     for all to anon using (tru
 create policy djfl_anon_events     on djfl_events     for all to anon using (true) with check (true);
 create policy djfl_anon_attendance on djfl_attendance for all to anon using (true) with check (true);
 create policy djfl_anon_plays      on djfl_plays      for all to anon using (true) with check (true);
+
+-- Newer projects no longer expose new tables to the public key automatically.
+grant usage on schema public to anon;
+grant select, insert, update, delete on djfl_config, djfl_events, djfl_attendance, djfl_plays to anon;

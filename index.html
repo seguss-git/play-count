@@ -225,7 +225,7 @@
       </div>
       <p class="muted small hint" id="modeHint"></p>
       <div class="units" id="unitRow"></div>
-      <div class="row" id="viewRow" style="justify-content:flex-end;margin-bottom:6px"><button class="btn small" id="fieldToggle">Field view</button></div>
+      <div class="row" id="viewRow" style="justify-content:flex-end;margin-bottom:6px"><button class="btn small" id="saveUnitBtn">Save to unit</button><button class="btn small" id="fieldToggle">Field view</button></div>
       <div id="fieldView" style="display:none">
         <div class="fieldwrap" id="fieldBox"><span class="los">LINE OF SCRIMMAGE</span></div>
         <p class="muted small" style="margin:0 0 6px">Tap a player to see who can replace him at that spot. Bench below.</p>
@@ -448,6 +448,15 @@
     <button class="btn danger grow" id="confirmYes">Yes</button>
   </div>
 </dialog>
+<dialog id="saveUnitDlg">
+  <h2 style="margin:0 0 2px;font-size:17px">Save to unit</h2>
+  <p class="muted small" style="margin:0 0 10px" id="saveUnitSub"></p>
+  <div id="saveUnitList" style="max-height:50vh;overflow-y:auto"></div>
+  <div class="row" style="margin-top:12px">
+    <button class="btn grow" id="saveUnitCancel">Cancel</button>
+    <button class="btn grow" id="saveUnitNew">New unit</button>
+  </div>
+</dialog>
 <dialog id="unitDlg">
   <h2 style="margin:0 0 10px;font-size:16px" id="unitDlgTitle">New unit</h2>
   <input id="unitName" placeholder="Unit name (e.g. Hawk)" autocomplete="off">
@@ -503,7 +512,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.1';
+  const APP_VERSION = '2026.09.14.2';
   // Shared team database. Baked in once the project exists; Settings can override.
   const SYNC_URL = '';
   const SYNC_KEY = '';
@@ -909,6 +918,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#playerGrid').style.display = useField ? 'none' : '';
     $('#viewRow').style.display = tap ? 'none' : '';
     $('#fieldToggle').textContent = useField ? 'List view' : 'Field view';
+    $('#saveUnitBtn').style.display = lineupIds().length ? '' : 'none';
     if (useField) renderField(g, counts);
     const n = lineupIds().length;
     const info = $('#onFieldInfo');
@@ -978,6 +988,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     return most * 2 >= ids.length ? best : null;
   }
   function resetSpots() { S.spots = {}; S.openSpots = []; }
+  function spotsFor(ids) { const o = {}; ids.forEach(id => { if (S.spots && S.spots[id]) o[id] = S.spots[id]; }); return o; }
   function reconcileSpots() {
     const ids = lineupIds();
     if (!S.spots) S.spots = {};
@@ -1242,6 +1253,64 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     row.appendChild(add);
   }
 
+  // The group on the field, with the spot each kid is standing in, written back into a unit.
+  // Absent members keep their place unless someone on the field was saved into it.
+  function unitFromField(u) {
+    const ids = lineupIds();
+    const pos = {};
+    ids.forEach(id => { if (S.spots[id]) pos[id] = S.spots[id]; });
+    const g = curGame();
+    const members = ids.slice();
+    if (u) {
+      const held = Object.keys(pos).map(id => pos[id]);
+      u.members.forEach(id => {
+        if (members.indexOf(id) >= 0 || !g || g.present.includes(id) || !player(id)) return;
+        const p = u.pos && u.pos[id];
+        if (p && held.indexOf(p) >= 0) return;
+        members.push(id); if (p) pos[id] = p;
+      });
+    }
+    return { members: members, pos: pos };
+  }
+  function unitChanges(u, next) {
+    const out = [], old = u.pos || {};
+    next.members.forEach(id => {
+      if (u.members.indexOf(id) < 0) out.push(lastName(player(id)) + ' in' + (next.pos[id] ? ' at ' + next.pos[id] : ''));
+      else if ((old[id] || '') !== (next.pos[id] || '')) out.push(lastName(player(id)) + ' ' + (old[id] || '?') + ' → ' + (next.pos[id] || '?'));
+    });
+    u.members.forEach(id => { if (next.members.indexOf(id) < 0 && player(id)) out.push(lastName(player(id)) + ' out'); });
+    return out;
+  }
+  function openSaveUnit() {
+    const ids = lineupIds(); if (!ids.length) return;
+    reconcileSpots();
+    $('#saveUnitSub').textContent = 'Saves the ' + ids.length + ' on the field and the spot each one is in. Tap the unit to update.';
+    const list = $('#saveUnitList'); list.innerHTML = '';
+    const au = formationUnit(ids);
+    const units = myUnits().slice().sort((a, b) => (b === au) - (a === au));
+    if (!units.length) list.innerHTML = '<div class="empty">No units yet. Use New unit.</div>';
+    units.forEach(u => {
+      const ch = unitChanges(u, unitFromField(u));
+      const b = document.createElement('button');
+      b.className = 'cand';
+      b.innerHTML = '<span class="nm"><b>' + esc(u.name) + '</b>' + (u === au ? ' <span class="why t0">on the field</span>' : '') +
+        '<br><span class="muted small">' + (ch.length ? esc(ch.slice(0, 4).join(' · ') + (ch.length > 4 ? ' · +' + (ch.length - 4) + ' more' : '')) : 'no changes') + '</span></span>';
+      b.onclick = () => {
+        if (!ch.length) { toast(u.name + ' already matches the field'); return; }
+        $('#saveUnitDlg').close();
+        ask('Update ' + u.name + '? ' + ch.join(', ') + '.', () => {
+          const next = unitFromField(u);
+          u.members = next.members; u.pos = next.pos; u.layout = {};
+          S.activeUnitId = u.id;
+          save(); render();
+          toast(u.name + ' saved');
+        });
+      };
+      list.appendChild(b);
+    });
+    $('#saveUnitDlg').showModal();
+  }
+
   function allPositions() {
     const seen = [];
     myUnits().forEach(u => {
@@ -1290,7 +1359,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function openUnitEditor(id, preset) {
     const u = id ? S.units.find(x => x.id === id) : null;
     draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice(),
-      pos: (u && u.pos) ? Object.assign({}, u.pos) : {} };
+      pos: (u && u.pos) ? Object.assign({}, u.pos) : spotsFor(preset || []) };
     $('#unitDlgTitle').textContent = u ? 'Edit unit' : 'New unit';
     $('#unitName').value = draft.name;
     $('#unitFromLineup').style.display = curGame() ? '' : 'none';
@@ -1825,6 +1894,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!u.members.length) { toast(u.name + ' has no players yet. Add them on the Roster tab.'); return; }
     S.lineup = u.members.filter(pid => g.present.includes(pid));
     S.activeUnitId = u.id; resetSpots();
+    S.openSpots = u.members.filter(pid => !g.present.includes(pid) && u.pos && u.pos[pid]).map(pid => u.pos[pid]);
     save(); renderHeader(); renderGame();
     if (navigator.vibrate) navigator.vibrate(20);
     const out = u.members.length - S.lineup.length;
@@ -2218,7 +2288,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#chartFile').onchange = (e) => { const f = e.target.files[0]; if (f) scanPhoto(f); e.target.value = ''; };
   $('#chartCancel').onclick = () => $('#chartDlg').close();
   $('#chartImport').onclick = () => { if (S.impMode === 'roster') applyRoster(); else applyChart(); $('#chartDlg').close(); $('#chartText').value = ''; };
-  $('#unitFromLineup').onclick = () => { if (draft) { draft.members = lineupIds().slice(); renderUnitDraft(); } };
+  $('#unitFromLineup').onclick = () => { if (draft) { draft.members = lineupIds().slice(); Object.assign(draft.pos, spotsFor(draft.members)); renderUnitDraft(); } };
+  $('#saveUnitBtn').onclick = openSaveUnit;
+  $('#saveUnitCancel').onclick = () => $('#saveUnitDlg').close();
+  $('#saveUnitNew').onclick = () => { $('#saveUnitDlg').close(); openUnitEditor(null, lineupIds()); };
   $('#unitNone').onclick = () => { if (draft) { draft.members = []; renderUnitDraft(); } };
   $('#unitCancel').onclick = () => { $('#unitDlg').close(); draft = null; };
   $('#unitSave').onclick = () => {
