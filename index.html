@@ -368,6 +368,7 @@
       <div class="row wrap" style="margin-bottom:6px">
         <button class="btn small" id="allHereBtn">Everyone here</button>
         <button class="btn small" id="noneHereBtn">Clear</button>
+        <button class="btn small" id="copySheetBtn">Copy for sheet</button>
         <button class="btn small" id="pushBtn">Send to Sheet</button>
         <button class="btn small" id="attendDoneBtn">Done</button>
       </div>
@@ -481,6 +482,12 @@
       <div class="row" style="margin-top:8px"><button class="btn small" id="syncNowBtn">Sync now</button><span class="muted small grow" id="syncStatus"></span></div>
     </div>
     <div class="card">
+      <h2>Head coach's sheet</h2>
+      <p class="muted small" style="margin:0 0 6px">The app never touches the sheet. Once: in the sheet, select the players' names from the first player down (the Last Name column, or Last and First together), copy, and paste here. After that, <b>Copy for sheet</b> on a practice gives a column of Y and blanks in the same order, to paste under that date.</p>
+      <textarea id="sheetOrderText" rows="5" spellcheck="false" placeholder="Paste the names from the sheet, one per line"></textarea>
+      <div class="muted small" id="sheetOrderStatus" style="margin-top:6px"></div>
+    </div>
+    <div class="card">
       <h2>Google Sheet</h2>
       <p class="muted small" style="margin:0 0 6px">Paste the web app link from the Apps Script you deployed on your attendance sheet. Attendance then posts straight into it. The link is stored on this device only.</p>
       <input id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
@@ -497,6 +504,12 @@
   <button data-view="settings"><span class="ic">⚙️</span>Settings</button>
 </nav>
 
+<dialog id="copyDlg">
+  <h2 style="margin:0 0 8px;font-size:17px" id="copyTitle"></h2>
+  <p id="copyMsg" class="small" style="margin:0 0 10px;white-space:pre-line"></p>
+  <textarea id="copyText" rows="8" readonly spellcheck="false"></textarea>
+  <div class="row" style="margin-top:10px"><button class="btn primary grow" id="copyDone">Done</button></div>
+</dialog>
 <dialog id="confirmDlg">
   <p id="confirmMsg" style="margin:0 0 16px"></p>
   <div class="row">
@@ -568,7 +581,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.4';
+  const APP_VERSION = '2026.09.14.5';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -771,6 +784,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     templateB: [],       // Blue names from the personal link
     rosterTeam: 'White', // which team the Roster tab is showing
     sheetUrl: '',        // Apps Script web app URL for pushing attendance
+    sheetOrder: '',      // names pasted from the head coach's sheet, in its row order
     roster: [],          // {id, num, name, team:'White'|'Blue'}
     units: [],           // {id, name, members:[playerId], pos:{playerId:'QB'}} e.g. Hawk, Viper
     activeUnitId: null,  // unit last sent out, used to label positions on the field
@@ -2093,6 +2107,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     renderSyncStatus();
     if (document.activeElement !== $('#sheetUrl')) $('#sheetUrl').value = S.sheetUrl || '';
     $('#pushBtn').style.display = S.sheetUrl ? '' : 'none';
+    if (document.activeElement !== $('#sheetOrderText')) $('#sheetOrderText').value = S.sheetOrder || '';
+    renderSheetOrderStatus();
     const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
     games().forEach(g => { const c = countsFor(g); Object.keys(c).forEach(id => { if (tot[id] && c[id] > 0) { tot[id].plays += c[id]; tot[id].games++; } }); });
     $('#seasonList').innerHTML = sortRoster(gameRoster()).map(p =>
@@ -2465,6 +2481,78 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (dot) { dot.style.display = syncOn() ? '' : 'none'; dot.className = 'livedot' + (streamOpen && !syncErr ? ' on' : ''); dot.title = syncStatusText(); }
   }
 
+  // ---------- paste into the head coach's sheet ----------
+  // The app never touches that sheet. Its name column is pasted in once to learn the row order;
+  // after that a session copies one column of Y and blanks lined up with those rows, to paste by hand.
+  function sheetLines() {
+    const lines = String(S.sheetOrder || '').replace(/\r/g, '').split('\n');
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    if (lines.length && /last name|first name|^\s*(name|player)s?\s*$/i.test(lines[0]) && !matchSheetName(lines[0]).p) lines.shift();
+    return lines;
+  }
+  function matchSheetName(line) {
+    const cells = String(line).split(/[\t,]/).map(c => c.trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean);
+    if (!cells.length) return { blank: true };
+    const joined = [cells.join(' '), cells.slice().reverse().join(' ')];
+    const full = S.roster.filter(p => { const n = p.name.toLowerCase(); return cells.indexOf(n) >= 0 || joined.indexOf(n) >= 0; });
+    if (full.length === 1) return { p: full[0] };
+    for (const c of cells) {
+      const hits = S.roster.filter(p => lastName(p).toLowerCase() === c);
+      if (hits.length === 1) return { p: hits[0] };
+      if (hits.length > 1) {
+        const byFirst = hits.filter(p => cells.some(x => x !== c && p.name.toLowerCase().split(/\s+/)[0] === x));
+        return byFirst.length === 1 ? { p: byFirst[0] } : { ambiguous: true };
+      }
+    }
+    return {};
+  }
+  function sheetColumn(e) {
+    const pool = e ? poolFor(e) : [];
+    const out = [], unmatched = [], seen = {};
+    sheetLines().forEach(line => {
+      const m = matchSheetName(line);
+      if (m.blank) { out.push(''); return; }
+      if (!m.p) { out.push(''); unmatched.push(line.replace(/\t/g, ' ').trim()); return; }
+      seen[m.p.id] = 1;
+      out.push(e && pool.some(p => p.id === m.p.id) && e.present.indexOf(m.p.id) >= 0 ? 'Y' : '');
+    });
+    const missing = e ? pool.filter(p => e.present.indexOf(p.id) >= 0 && !seen[p.id]) : [];
+    return { text: out.join('\n'), rows: out.length, marked: out.filter(x => x === 'Y').length, unmatched: unmatched, missing: missing, seen: seen };
+  }
+  function renderSheetOrderStatus() {
+    const el = $('#sheetOrderStatus'); if (!el) return;
+    if (!sheetLines().length) { el.textContent = 'Nothing pasted yet.'; return; }
+    const c = sheetColumn(null);
+    const matched = Object.keys(c.seen).length;
+    const notOnSheet = S.roster.filter(p => !c.seen[p.id]);
+    el.innerHTML = esc(c.rows + ' rows · ' + matched + ' players matched') +
+      (c.unmatched.length ? '<br><span style="color:var(--amber)">No player matched, left blank: ' + esc(c.unmatched.join(', ')) + '</span>' : '') +
+      (matched && notOnSheet.length ? '<br><span class="muted">Not on the sheet: ' + esc(notOnSheet.map(p => p.name).join(', ')) + '</span>' : '');
+  }
+  function showCopied(title, msg, text, copied) {
+    $('#copyTitle').textContent = title;
+    $('#copyMsg').textContent = msg;
+    const ta = $('#copyText');
+    ta.style.display = copied ? 'none' : '';
+    ta.value = text;
+    $('#copyDlg').showModal();
+    if (!copied) { ta.focus(); ta.select(); }
+  }
+  async function copySheetColumn() {
+    const e = ev(S.selectedEventId); if (!e) return;
+    if (!sheetLines().length) { showView('settings'); toast('Paste the names from the sheet in Settings first'); setTimeout(() => $('#sheetOrderText').focus(), 300); return; }
+    const c = sheetColumn(e);
+    const notes = [];
+    if (c.missing.length) notes.push('Here but not on the sheet, so add them by hand: ' + c.missing.map(p => p.name).join(', ') + '.');
+    if (c.unmatched.length) notes.push('Left blank because no player matched: ' + c.unmatched.join(', ') + '.');
+    const how = c.rows + ' rows, ' + c.marked + ' marked Y. In the sheet, click the first player’s cell under ' + fmtDate(e.date).replace(/^\w+ /, '') + ' and paste.';
+    let copied = false;
+    try { await navigator.clipboard.writeText(c.text); copied = true; } catch (err) { copied = false; }
+    showCopied(copied ? 'Copied for the sheet' : 'Copy this for the sheet',
+      (copied ? '' : 'This phone would not copy automatically. The text below is selected: copy it, then paste. ') + how + (notes.length ? '\n\n' + notes.join('\n\n') : ''),
+      c.text, copied);
+  }
+
   // ---------- google sheet push ----------
   function attendancePayload(e) {
     const rows = sortRoster(poolFor(e)).map(p => ({
@@ -2665,6 +2753,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#fieldToggle').onclick = () => { S.fieldView = !S.fieldView; save(); renderGame(); };
   $('#focusBtn').onclick = () => { S.focus = !S.focus; save(); renderGame(); };
   $('#pushBtn').onclick = pushAttendance;
+  $('#copySheetBtn').onclick = copySheetColumn;
+  $('#copyDone').onclick = () => $('#copyDlg').close();
+  $('#sheetOrderText').oninput = (e) => { S.sheetOrder = e.target.value; save(); renderSheetOrderStatus(); };
   const syncCfgChanged = () => {
     const u = $('#syncUrl').value.trim(), k = $('#syncKey').value.trim();
     if (u !== (S.syncUrl || '') || k !== (S.syncKey || '')) {
