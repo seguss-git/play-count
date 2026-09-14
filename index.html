@@ -78,6 +78,7 @@
   .ubtn .c { font-weight: 400; font-size: 12px; opacity: .65; margin-left: 4px; }
   .ubtn.add { border-style: dashed; font-weight: 400; color: var(--muted); }
   .ulist .rrow b { font-size: 16px; }
+  .possel { width: 104px; flex: none; min-height: 38px; padding: 4px 6px; font-size: 14px; }
   .posin { width: 66px; text-align: center; min-height: 38px; padding: 4px 6px; font-size: 14px; flex: none; text-transform: uppercase; }
   .chip .pos { font-size: 11px; font-weight: 800; letter-spacing: .06em; margin-top: 3px; color: var(--amber); }
   .chip.on .pos { color: #92400e; }
@@ -529,6 +530,7 @@
 <dialog id="unitDlg">
   <h2 style="margin:0 0 10px;font-size:16px" id="unitDlgTitle">New unit</h2>
   <input id="unitName" placeholder="Unit name (e.g. Hawk)" autocomplete="off">
+  <div class="seg" id="unitSideSeg" style="margin:8px 0 0"><button data-side="def">Defense</button><button data-side="off">Offense</button></div>
   <div class="row" style="margin:10px 0 4px">
     <button class="btn small" id="unitFromLineup">Use who is on the field</button>
     <button class="btn small" id="unitNone">Clear</button>
@@ -581,7 +583,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.5';
+  const APP_VERSION = '2026.09.14.6';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1245,15 +1247,48 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (m) { side = m[1] === 'L' ? -1 : 1; q = m[2]; }
     else if (/^[LR](T|G)$/.test(q)) { side = q[0] === 'L' ? -1 : 1; q = q.slice(1); }
     const at = (r, d) => ({ r: r, x: side * d });
+    // Our offense: X split left on the line, H/Y outside the right tackle, Z off the line right,
+    // QB under centre with the upback then the fullback behind him.
+    if (q === 'X') return { r: 0, x: -5 };
+    if (q === 'H/Y' || q === 'H' || q === 'Y') return { r: 0, x: 3 };
+    if (q === 'Z') return { r: 1, x: 5 };
+    if (q === 'UB') return { r: 2, x: 0 };
+    if (q === 'FB') return { r: 3, x: 0 };
     if (/^(WR|SE|FL)$/.test(q)) return at(0, 5);
     if (/^CB$/.test(q)) return at(0, 4);
-    if (/^(DE|TE|T|OT)$/.test(q)) return at(0, 3);
-    if (/^(DT|G|OG)$/.test(q)) return at(0, 2);
-    if (/^(DG|NG|NT|DL|C)$/.test(q)) return at(0, 1);
+    if (/^(DE|TE)$/.test(q)) return at(0, 3);
+    if (/^(DT|T|OT)$/.test(q)) return at(0, 2);
+    if (/^(DG|NG|NT|DL|C|G|OG)$/.test(q)) return at(0, 1);
+    if (/^(WB|SB)$/.test(q)) return at(1, 4);
     if (/^OLB$/.test(q)) return at(1, 3);
     if (/^(MLB|ILB|LB|MIKE|SAM|WILL|QB)$/.test(q)) return at(1, 1);
-    if (/^(S|SS|FS|SAFETY|DB|RB|FB|HB)$/.test(q)) return at(2, 2);
+    if (/^(S|SS|FS|SAFETY|DB)$/.test(q)) return at(2, 2);
+    if (/^(RB|HB|TB)$/.test(q)) return at(3, 1);
     return null;
+  }
+  // The positions offered when building a unit, left to right across the field.
+  var SIDE_POSITIONS = {
+    def: ['L-CB', 'L-DE', 'L-DT', 'L-DG', 'NG', 'R-DG', 'R-DT', 'R-DE', 'R-CB', 'L-OLB', 'L-MLB', 'MLB', 'R-MLB', 'R-OLB', 'SAFETY', 'FS', 'SS'],
+    off: ['X', 'LT', 'LG', 'C', 'RG', 'RT', 'H/Y', 'Z', 'QB', 'UB', 'FB']
+  };
+  function posSideOf(pos) {
+    const q = String(pos || '').toUpperCase().replace(/^[LR]-/, '');
+    if (/^(CB|DE|DT|DG|NG|NT|DL|OLB|MLB|ILB|LB|SAFETY|S|SS|FS|DB)$/.test(q)) return 'def';
+    if (/^(X|Z|H\/Y|H|Y|UB|WR|SE|FL|TE|LT|LG|RT|RG|T|G|OT|OG|C|WB|SB|QB|FB|RB|HB|TB)$/.test(q)) return 'off';
+    return '';
+  }
+  // Offense or defense, from the unit's own setting or else from the positions it holds.
+  function unitSide(u) {
+    if (u && u.side) return u.side;
+    let d = 0, o = 0;
+    Object.keys((u && u.pos) || {}).forEach(id => { const k = posSideOf(u.pos[id]); if (k === 'def') d++; if (k === 'off') o++; });
+    return o > d ? 'off' : (d ? 'def' : '');
+  }
+  // Rule 8.1: a limited player may only play DG, DT, OG, OT or C.
+  function limitedOk(pos) {
+    let q = String(pos || '').toUpperCase().replace(/^[LR]-/, '');
+    if (/^[LR](T|G)$/.test(q)) q = q.slice(1);
+    return /^(DG|DT|NG|NT|DL|C|G|OG|T|OT)$/.test(q);
   }
 
   // Who stands where. A unit sets the spots; a sub steps into the spot of the kid he replaced.
@@ -1283,7 +1318,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     });
     rest.forEach(id => {
       const pl = player(id), ps = positionsOf(id);
-      const allowed = (o) => !(pl && pl.limited) || fitKind(o) === 'interior';
+      const allowed = (o) => !(pl && pl.limited) || limitedOk(o);
       const free = open.filter(o => allowed(o) && held().indexOf(o) < 0);
       const pick = free.find(o => ps.indexOf(o) >= 0) || free.find(o => ps.indexOf(mirrorPos(o)) >= 0) ||
         free.find(o => ps.some(x => posGroup(x) === posGroup(o))) || free[0] ||
@@ -1302,10 +1337,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const pos = S.spots[id] || '';
       const geo = posSpot(pos);
       const lay = (!geo && u && u.layout && u.pos && u.pos[id] === pos) ? u.layout[id] : null;
-      add({ id: id, pos: pos, r: geo ? geo.r : (lay ? lay.r : 3), x: geo ? geo.x : null,
+      add({ id: id, pos: pos, r: geo ? geo.r : (lay ? lay.r : 9), x: geo ? geo.x : null,
         c: geo ? geo.x : (lay ? lay.c : 100 + (lastName(player(id)) || '').charCodeAt(0)) });
     });
-    (S.openSpots || []).forEach(pos => { const geo = posSpot(pos); add({ id: null, pos: pos, r: geo ? geo.r : 3, x: geo ? geo.x : null, c: geo ? geo.x : 200 }); });
+    (S.openSpots || []).forEach(pos => { const geo = posSpot(pos); add({ id: null, pos: pos, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 }); });
     return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c));
   }
   function renderField(g, counts) {
@@ -1373,8 +1408,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (/^(MLB|OLB|ILB|LB)$/.test(q)) return 'linebacker';
     if (/^(CB|S|SS|FS|DB|SAFETY)$/.test(q)) return 'secondary';
     if (/^(T|G|C|OL|LT|LG|RT|RG)$/.test(q)) return 'line';
-    if (/^(WR|TE|SE|FL)$/.test(q)) return 'receiver';
-    if (/^(RB|FB|HB|QB)$/.test(q)) return 'backfield';
+    if (/^(X|Z|H\/Y|H|Y|WR|TE|SE|FL)$/.test(q)) return 'receiver';
+    if (/^(UB|RB|FB|HB|QB)$/.test(q)) return 'backfield';
     return 'other';
   }
   function mirrorPos(pos) {
@@ -1400,7 +1435,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const interior = fitKind(pos) === 'interior';
     presentRoster(g).forEach(p => {
       if (onField.indexOf(p.id) >= 0) return;
-      if (p.limited && pos && !interior) return;   // rule 8.1: limited players only at DG/DT/OG/OT/C
+      if (p.limited && pos && !limitedOk(pos)) return;   // rule 8.1: limited players only at DG/DT/OG/OT/C
       const ps = positionsOf(p.id);
       let tier = 3, why = 'not on the chart';
       if (pos && ps.indexOf(pos) >= 0) { tier = 0; why = 'plays ' + pos; }
@@ -1492,7 +1527,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (/^(MLB|OLB|ILB|LB)$/.test(q)) return 'linebacker';
     if (/^(CB|DB)$/.test(q)) return 'corner';
     if (/^(S|SS|FS|SAFETY)$/.test(q)) return 'safety';
-    if (/^(WR|TE|SE|FL|RB|FB|HB|QB)$/.test(q)) return 'skill';
+    if (/^(X|Z|H\/Y|H|Y|UB|WR|TE|SE|FL|RB|FB|HB|QB)$/.test(q)) return 'skill';
     return 'other';
   }
   function fitScore(pl, pos) {
@@ -1607,7 +1642,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const onChart = {};
     myUnits().forEach(u => { if (u.pos) Object.keys(u.pos).forEach(id => { if (u.pos[id] === pos) onChart[id] = u.name; }); });
     const interior = fitKind(pos) === 'interior';
-    const ranked = sortRoster(gameRoster()).filter(p => !(p.limited && !interior)).map(p => ({ p: p, fit: fitScore(p, pos), unit: onChart[p.id] }))
+    const ranked = sortRoster(gameRoster()).filter(p => !(p.limited && !limitedOk(pos))).map(p => ({ p: p, fit: fitScore(p, pos), unit: onChart[p.id] }))
       .sort((a, b) => (b.fit === null ? -1 : a.fit === null ? 1 : b.fit - a.fit));
     $('#fitList').innerHTML = ranked.slice(0, 10).map(r =>
       '<div class="crow"><span class="pname">' + (r.unit ? '★ ' : '') + esc(r.p.name) +
@@ -1622,7 +1657,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     myUnits().forEach(u => {
       const row = document.createElement('div'); row.className = 'rrow';
       const who = u.members.map(id => player(id)).filter(Boolean);
-      row.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span><br><span class="muted small">' +
+      const sd = unitSide(u);
+      row.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span>' + (sd ? ' <span class="tag">' + (sd === 'off' ? 'Offense' : 'Defense') + '</span>' : '') + '<br><span class="muted small">' +
         (who.length ? esc(who.map(p => ((u.pos && u.pos[p.id]) ? u.pos[p.id] + ' ' : '') + p.name.split(/\s+/).slice(-1)[0]).join(', ')) : 'nobody yet') + '</span></span>' +
         '<button class="btn small edit">Edit</button><button class="btn small danger del">✕</button>';
       row.querySelector('.edit').onclick = () => openUnitEditor(u.id, null);
@@ -1638,6 +1674,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const u = id ? S.units.find(x => x.id === id) : null;
     draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice(),
       pos: (u && u.pos) ? Object.assign({}, u.pos) : spotsFor(preset || []) };
+    draft.side = unitSide(u || { pos: draft.pos }) || S.lastUnitSide || 'def';
     $('#unitDlgTitle').textContent = u ? 'Edit unit' : 'New unit';
     $('#unitName').value = draft.name;
     $('#unitFromLineup').style.display = curGame() ? '' : 'none';
@@ -1647,6 +1684,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function renderUnitDraft() {
     if (!draft) return;
     $('#unitCount').textContent = draft.members.length + ' selected';
+    document.querySelectorAll('#unitSideSeg button').forEach(b => b.classList.toggle('active', b.dataset.side === draft.side));
+    const heldBy = {};
+    draft.members.forEach(id => { if (draft.pos[id]) heldBy[draft.pos[id]] = lastName(player(id)); });
+    const choices = SIDE_POSITIONS[draft.side] || SIDE_POSITIONS.def;
     const box = $('#unitMembers'); box.innerHTML = '';
     if (!gameRoster().length) { box.innerHTML = '<div class="empty">Add ' + S.team + ' players on the Roster tab first.</div>'; return; }
     sortRoster(gameRoster()).forEach(p => {
@@ -1654,19 +1695,34 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const r = document.createElement('div');
       r.className = 'arow' + (inU ? ' here' : '');
       r.innerHTML = '<span class="chk">' + (inU ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>' +
-        (inU ? '<input class="posin" placeholder="Pos" maxlength="6" value="' + esc(draft.pos[p.id] || '') + '">' : '');
+        (inU ? posSelect(choices, draft.pos[p.id] || '', heldBy) : '');
       r.onclick = () => {
         if (inU) { draft.members = draft.members.filter(i => i !== p.id); delete draft.pos[p.id]; }
         else draft.members.push(p.id);
         renderUnitDraft();
       };
-      const pi = r.querySelector('.posin');
+      const pi = r.querySelector('.possel');
       if (pi) {
         pi.onclick = (e) => e.stopPropagation();
-        pi.oninput = (e) => { const v = e.target.value.trim().toUpperCase(); if (v) draft.pos[p.id] = v; else delete draft.pos[p.id]; };
+        pi.onchange = (e) => {
+          let v = e.target.value;
+          if (v === '__other') {
+            const t = window.prompt('Position (for example SPUR or L-SB):', draft.pos[p.id] || '');
+            v = t === null ? (draft.pos[p.id] || '') : t.trim().toUpperCase().slice(0, 8);
+          }
+          if (v) draft.pos[p.id] = v; else delete draft.pos[p.id];
+          renderUnitDraft();
+        };
       }
       box.appendChild(r);
     });
+  }
+
+  function posSelect(choices, cur, heldBy) {
+    let h = '<select class="possel"><option value="">Pos</option>';
+    choices.forEach(o => { h += '<option value="' + o + '"' + (o === cur ? ' selected' : '') + '>' + o + (heldBy[o] && o !== cur ? ' · ' + esc(heldBy[o]) : '') + '</option>'; });
+    if (cur && choices.indexOf(cur) < 0) h += '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>';
+    return h + '<option value="__other">Other…</option></select>';
   }
 
   // ---------- unit chart import ----------
@@ -1825,6 +1881,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (pk.pos) u.pos[pk.id] = pk.pos;
         if (typeof pk.r === 'number') u.layout[pk.id] = { r: pk.r, c: pk.c };
       });
+      if (!u.side && unitSide(u)) u.side = unitSide(u);
     });
     return { rows: res.rows.length, made: made };
   }
@@ -2830,6 +2887,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#chartImport').onclick = () => { if (S.impMode === 'roster') applyRoster(); else applyChart(); $('#chartDlg').close(); $('#chartText').value = ''; };
   $('#unitFromLineup').onclick = () => { if (draft) { draft.members = lineupIds().slice(); Object.assign(draft.pos, spotsFor(draft.members)); renderUnitDraft(); } };
   $('#saveUnitBtn').onclick = openSaveUnit;
+  document.querySelectorAll('#unitSideSeg button').forEach(b => b.onclick = () => { if (draft) { draft.side = b.dataset.side; renderUnitDraft(); } });
   $('#saveUnitCancel').onclick = () => $('#saveUnitDlg').close();
   $('#saveUnitNew').onclick = () => { $('#saveUnitDlg').close(); openUnitEditor(null, lineupIds()); };
   $('#unitNone').onclick = () => { if (draft) { draft.members = []; renderUnitDraft(); } };
@@ -2838,8 +2896,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!draft) return;
     const name = $('#unitName').value.trim();
     if (!name) { $('#unitName').focus(); return toast('Give the unit a name'); }
-    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); }
-    else S.units.push({ id: uid(), name: name, team: S.team, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
+    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); u.side = draft.side; }
+    else S.units.push({ id: uid(), name: name, team: S.team, side: draft.side, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
+    S.lastUnitSide = draft.side;
     $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
   };
 
