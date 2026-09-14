@@ -434,7 +434,7 @@
       <p class="muted small" style="margin:8px 0 0">Ranked on 40 time, 5-10-5, 3-cone, broad jump and weight, weighted for that spot. A star marks someone already on the chart there.</p>
     </div>
     <div class="card" id="unitsCard">
-      <h2>Units <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
+      <h2><span id="unitsHead">Units</span> <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
       <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
       <div id="unitList" class="ulist"></div>
       <div class="row wrap" style="margin-top:10px">
@@ -584,7 +584,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.7';
+  const APP_VERSION = '2026.09.14.8';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -736,7 +736,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       SEED_BLUE.forEach(n => S.roster.push({ id: uid(), num: '', name: n, team: 'Blue' }));
       touched = true;
     }
-    if (!S.units.length) { importChartText(SEED_CHART); touched = true; }
+    if (!S.units.length) { importChartText(SEED_CHART, 'White'); touched = true; }
     if (!S.events.length && seedAttendance()) touched = true;
     SEED_MOVES.forEach(mv => {
       const pl = S.roster.find(x => x.name.toLowerCase() === mv.name.toLowerCase());
@@ -896,6 +896,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // The team this phone is running games for. Practices always cover everyone.
   const gameRoster = () => teamRoster(S.team);
   const myUnits = () => S.units.filter(u => (u.team || 'White') === S.team);
+  // Units for a given team; the Roster tab shows whichever team its switch is on.
+  const unitsFor = (t) => S.units.filter(u => (u.team || 'White') === t);
   const poolFor = (e) => (!e || e.type === 'practice') ? S.roster : teamRoster(eventTeam(e));
   const num = (p) => (p.num === '' || p.num == null) ? 999 : Number(p.num);
   const sortRoster = (arr) => arr.slice().sort((a, b) => (num(a) - num(b)) || a.name.localeCompare(b.name));
@@ -1633,9 +1635,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#saveUnitDlg').showModal();
   }
 
-  function allPositions() {
+  function allPositions(t) {
     const seen = [];
-    myUnits().forEach(u => {
+    unitsFor(t || S.team).forEach(u => {
       if (!u.pos) return;
       Object.keys(u.pos).forEach(id => { const q = u.pos[id]; if (q && seen.indexOf(q) < 0) seen.push(q); });
     });
@@ -1647,15 +1649,16 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     document.querySelectorAll('#fitSideSeg button').forEach(b => b.classList.toggle('active', b.dataset.side === side));
     // The side's standard spots, plus any other spot a unit on that side uses.
     const list = SIDE_POSITIONS[side].slice();
-    allPositions().forEach(q => { if (list.indexOf(q) < 0 && posSideOf(q) === side) list.push(q); });
+    const team = S.rosterTeam || S.team;
+    allPositions(team).forEach(q => { if (list.indexOf(q) < 0 && posSideOf(q) === side) list.push(q); });
     if (!list.length) { sel.innerHTML = '<option>No positions yet</option>'; $('#fitList').innerHTML = '<div class="empty">Import a unit chart to see this.</div>'; return; }
     const keep = sel.value && list.indexOf(sel.value) >= 0 ? sel.value : list[0];
     sel.innerHTML = list.map(q => '<option' + (q === keep ? ' selected' : '') + '>' + esc(q) + '</option>').join('');
     const pos = keep;
     const onChart = {};
-    myUnits().forEach(u => { if (u.pos) Object.keys(u.pos).forEach(id => { if (u.pos[id] === pos) onChart[id] = u.name; }); });
+    unitsFor(team).forEach(u => { if (u.pos) Object.keys(u.pos).forEach(id => { if (u.pos[id] === pos) onChart[id] = u.name; }); });
     const interior = fitKind(pos) === 'interior';
-    const ranked = sortRoster(gameRoster()).filter(p => !(p.limited && !limitedOk(pos))).map(p => ({ p: p, fit: fitScore(p, pos), unit: onChart[p.id] }))
+    const ranked = sortRoster(teamRoster(team)).filter(p => !(p.limited && !limitedOk(pos))).map(p => ({ p: p, fit: fitScore(p, pos), unit: onChart[p.id] }))
       .sort((a, b) => (b.fit === null ? -1 : a.fit === null ? 1 : b.fit - a.fit));
     $('#fitList').innerHTML = ranked.slice(0, 10).map(r =>
       '<div class="crow"><span class="pname">' + (r.unit ? '★ ' : '') + esc(r.p.name) +
@@ -1665,9 +1668,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function renderUnitList() {
     const list = $('#unitList');
-    if (!myUnits().length) { list.innerHTML = '<div class="empty">No units yet. Build one here, or tap the players on the field and use the + button on the Game tab.</div>'; return; }
+    const team = S.rosterTeam || S.team;
+    $('#unitsHead').textContent = team + ' units';
+    if (!unitsFor(team).length) { list.innerHTML = '<div class="empty">No ' + team + ' units yet. Build one here' + (team === S.team ? ', or tap the players on the field and use the + button on the Game tab' : '') + '.</div>'; return; }
     list.innerHTML = '';
-    myUnits().forEach(u => {
+    unitsFor(team).forEach(u => {
       const row = document.createElement('div'); row.className = 'rrow';
       const who = u.members.map(id => player(id)).filter(Boolean);
       const sd = unitSide(u);
@@ -1683,14 +1688,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
 
   let draft = null;
-  function openUnitEditor(id, preset) {
+  function openUnitEditor(id, preset, team) {
     const u = id ? S.units.find(x => x.id === id) : null;
     draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice(),
       pos: (u && u.pos) ? Object.assign({}, u.pos) : spotsFor(preset || []) };
     draft.side = unitSide(u || { pos: draft.pos }) || S.lastUnitSide || 'def';
+    draft.team = u ? (u.team || 'White') : (team || S.team);
     $('#unitDlgTitle').textContent = u ? 'Edit unit' : 'New unit';
     $('#unitName').value = draft.name;
-    $('#unitFromLineup').style.display = curGame() ? '' : 'none';
+    $('#unitFromLineup').style.display = curGame() && draft.team === S.team ? '' : 'none';
     renderUnitDraft();
     $('#unitDlg').showModal();
   }
@@ -1702,8 +1708,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     draft.members.forEach(id => { if (draft.pos[id]) heldBy[draft.pos[id]] = lastName(player(id)); });
     const choices = SIDE_POSITIONS[draft.side] || SIDE_POSITIONS.def;
     const box = $('#unitMembers'); box.innerHTML = '';
-    if (!gameRoster().length) { box.innerHTML = '<div class="empty">Add ' + S.team + ' players on the Roster tab first.</div>'; return; }
-    sortRoster(gameRoster()).forEach(p => {
+    if (!teamRoster(draft.team).length) { box.innerHTML = '<div class="empty">Add ' + draft.team + ' players on the Roster tab first.</div>'; return; }
+    sortRoster(teamRoster(draft.team)).forEach(p => {
       const inU = draft.members.includes(p.id);
       const r = document.createElement('div');
       r.className = 'arow' + (inU ? ' here' : '');
@@ -1744,7 +1750,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (line.indexOf(',') >= 0) return line.split(',').map(s => s.trim());
     return line.split(/\s{2,}/).map(s => s.trim());
   }
-  function matchPlayer(txt) {
+  function matchPlayer(txt, team) {
     const t = String(txt).toLowerCase().replace(/[^a-z' ]/g, '').trim();
     if (!t) return null;
     const parts = (p) => p.name.toLowerCase().split(/\s+/);
@@ -1756,12 +1762,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       (p) => t.length > 3 && parts(p).slice(-1)[0].indexOf(t.slice(0, -1)) === 0
     ];
     for (let i = 0; i < tries.length; i++) {
-      const m = gameRoster().filter(tries[i]);
+      const m = teamRoster(team || S.team).filter(tries[i]);
       if (m.length === 1) return m[0];
     }
     return null;
   }
-  function parseChart(text) {
+  function parseChart(text, team) {
     const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     let positions = null, band = -1; const order = []; const byName = {}; const problems = [];
     lines.forEach(line => {
@@ -1772,7 +1778,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       // A sheet often stacks several tables, each with its own header row.
       if (/^unit\b/i.test(cells[0])) { positions = body.map(s => s.toUpperCase()); band++; return; }
       if (positions === null) {
-        const matched = filled.filter(c => matchPlayer(c)).length;
+        const matched = filled.filter(c => matchPlayer(c, team)).length;
         if (filled.length && matched * 2 < filled.length) { positions = body.map(s => s.toUpperCase()); band++; return; }
         positions = body.map(() => ''); band++;
       }
@@ -1782,7 +1788,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const row = byName[name];
       body.forEach((c, i) => {
         if (!c) return;
-        const p = matchPlayer(c);
+        const p = matchPlayer(c, team);
         if (!p) { problems.push(name + ' "' + c + '"'); return; }
         const pos = (positions[i] || '').toUpperCase();
         const seen = row.picks.filter(x => x.id === p.id)[0];
@@ -1866,27 +1872,28 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
 
   function renderChartPreview() {
-    const res = parseChart($('#chartText').value);
+    const res = parseChart($('#chartText').value, S.rosterTeam);
     const box = $('#chartPreview');
     $('#chartImport').disabled = !res.rows.length;
     if (!res.rows.length) { box.innerHTML = '<span class="muted">Nothing recognised yet.</span>'; return; }
     box.innerHTML = res.rows.map(r => {
-      const known = myUnits().some(u => u.name.toLowerCase() === r.name.toLowerCase());
+      const known = unitsFor(S.rosterTeam).some(u => u.name.toLowerCase() === r.name.toLowerCase());
       return '<div style="margin-bottom:6px"><b>' + esc(r.name) + '</b> <span class="muted">' + r.picks.length + (known ? ', updates existing' : ', new') + '</span><br>' +
         '<span class="muted">' + esc(r.picks.map(pk => (pk.pos ? pk.pos + ' ' : '') + lastName(player(pk.id))).join(', ')) + '</span></div>';
     }).join('') + (res.problems.length ? '<div style="color:var(--red)">No roster match: ' + esc(res.problems.join(', ')) + '</div>' : '');
   }
   function applyChart() {
-    const r = importChartText($('#chartText').value);
+    const r = importChartText($('#chartText').value, S.rosterTeam);
     save(); render();
     toast(r.rows + ' unit' + (r.rows === 1 ? '' : 's') + ' imported' + (r.made ? ', ' + r.made + ' new' : ''));
   }
-  function importChartText(text) {
-    const res = parseChart(text);
+  function importChartText(text, team) {
+    team = team || S.team;
+    const res = parseChart(text, team);
     let made = 0;
     res.rows.forEach(r => {
-      let u = myUnits().filter(x => x.name.toLowerCase() === r.name.toLowerCase())[0];
-      if (!u) { u = { id: uid(), name: r.name, team: S.team, members: [], pos: {}, layout: {} }; S.units.push(u); made++; }
+      let u = unitsFor(team).filter(x => x.name.toLowerCase() === r.name.toLowerCase())[0];
+      if (!u) { u = { id: uid(), name: r.name, team: team, members: [], pos: {}, layout: {} }; S.units.push(u); made++; }
       if (!u.pos) u.pos = {};
       if (!u.layout) u.layout = {};
       r.picks.forEach(pk => {
@@ -2136,12 +2143,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#addHead').textContent = 'Add ' + t + ' player';
     $('#rosterNote').innerHTML = t === S.team
       ? 'Your team. Games, play counts and units all use this list.'
-      : 'The other team. These players show up only in <b>practice</b> attendance, never in your games or play counts.';
+      : t + '. Their roster, units and best fit are all here. Games and play counts on this phone are for ' + S.team + '; switch My team in Settings to count ' + t + ' games.';
     $('#loadTeamRow').style.display = (t === 'White' ? S.template : S.templateB).length ? '' : 'none';
-    // Best fit, units and the limited flag belong to the game team; the other team is practice attendance only.
-    const gameTeam = t === S.team;
-    $('#fitCard').style.display = gameTeam ? '' : 'none';
-    $('#unitsCard').style.display = gameTeam ? '' : 'none';
+
     const ros = sortRoster(teamRoster(t));
     $('#rosterCount').textContent = ros.length ? '(' + ros.length + ')' : '';
     if (!ros.length) { list.innerHTML = '<div class="empty">No ' + t + ' players yet. Paste them into the box above.</div>'; return; }
@@ -2151,11 +2155,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       row.innerHTML =
         '<input class="n" type="number" inputmode="numeric" value="' + esc(numStr(p)) + '" placeholder="#">' +
         '<input class="grow nm" value="' + esc(p.name) + '" placeholder="Name">' +
-        (gameTeam ? '<button class="btn small ltd" title="Limited: over 105 lb, interior line only" style="min-width:48px' + (p.limited ? ';background:rgba(251,191,36,.18);color:var(--amber);border-color:var(--amber)' : '') + '">LTD</button>' : '') +
+        '<button class="btn small ltd" title="Limited: over 105 lb, interior line only" style="min-width:48px' + (p.limited ? ';background:rgba(251,191,36,.18);color:var(--amber);border-color:var(--amber)' : '') + '">LTD</button>' +
         '<button class="btn small danger del">✕</button>' +
-        (teamOf(p) === S.team ? '<select class="role" style="width:100%;margin-top:4px;min-height:36px;font-size:14px">' +
+        '<select class="role" style="width:100%;margin-top:4px;min-height:36px;font-size:14px">' +
           [['', 'Role on the min play sheet…'], ['2way', 'Two-way starter'], ['off', 'Offense-only starter'], ['def', 'Defense-only starter'], ['sub', 'Substitute'], ['k', 'Place kicker only']]
-            .map(o => '<option value="' + o[0] + '"' + ((p.role || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>' : '');
+            .map(o => '<option value="' + o[0] + '"' + ((p.role || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
       row.style.flexWrap = 'wrap';
       row.querySelector('.n').onchange = (e) => { p.num = e.target.value === '' ? '' : Number(e.target.value); save(); render(); };
       row.querySelector('.nm').onchange = (e) => { p.name = e.target.value.trim() || p.name; save(); render(); };
@@ -2894,7 +2898,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#loadTeamBtn').onclick = loadTeamRoster;
   $('#fitPos').onchange = renderFitBoard;
   document.querySelectorAll('#fitSideSeg button').forEach(b => b.onclick = () => { S.fitSide = b.dataset.side; save(); renderFitBoard(); });
-  $('#newUnitBtn').onclick = () => openUnitEditor(null, lineupIds());
+  $('#newUnitBtn').onclick = () => openUnitEditor(null, S.rosterTeam === S.team ? lineupIds() : [], S.rosterTeam);
   $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('chart'); $('#chartDlg').showModal(); };
   $('#rosterScanBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('roster'); $('#chartDlg').showModal(); };
   document.querySelectorAll('#impSeg button').forEach(b => b.onclick = () => setImpMode(b.dataset.imp));
@@ -2915,7 +2919,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const name = $('#unitName').value.trim();
     if (!name) { $('#unitName').focus(); return toast('Give the unit a name'); }
     if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); u.side = draft.side; }
-    else S.units.push({ id: uid(), name: name, team: S.team, side: draft.side, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
+    else S.units.push({ id: uid(), name: name, team: draft.team, side: draft.side, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
     S.lastUnitSide = draft.side;
     $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
   };
