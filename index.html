@@ -192,12 +192,24 @@
   .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--accent); color: var(--accent-text);
     padding: 10px 16px; border-radius: 999px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 10; }
   .toast.show { opacity: 1; }
+
+  /* Who is counting, and watching mode */
+  .counterbar { display: flex; align-items: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 8px 10px; margin: 0 0 10px; font-size: 13px; min-height: 46px; }
+  .counterbar .who { flex: 1; min-width: 0; }
+  .livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; margin-left: 6px; vertical-align: middle; }
+  .counterbar .livedot { margin-left: 0; }
+  .livedot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,.3); }
+  #gameArea.watch-us #usArea .ctl, #gameArea.watch-opp #oppArea .ctl, #gameArea.watch-us .gctl { display: none !important; }
+  #gameArea:not(.watch-us) #usArea .wonly, #gameArea:not(.watch-opp) #oppArea .wonly { display: none; }
+  #gameArea.watch-us #usArea .chip, #gameArea.watch-opp #oppArea .chip { cursor: default; }
+  #gameArea.watch-us #usArea .chip:active, #gameArea.watch-opp #oppArea .chip:active { transform: none; }
 </style>
 </head>
 <body>
 <header>
   <div><h1 class="logo"><span>DJFL</span><i class="four">4</i></h1><div class="sub" id="hdrSub">Play Count</div></div>
-  <div class="sub" id="hdrRight"></div>
+  <div class="sub"><span id="hdrRight"></span><span id="liveDot" class="livedot" style="display:none"></span></div>
 </header>
 
 <main>
@@ -219,20 +231,27 @@
       </div>
     </div>
     <div id="gameArea" style="display:none">
-      <div class="seg" id="modeSeg">
+      <div class="seg" id="sideSeg">
+        <button data-side="us" id="sideUsBtn">White</button>
+        <button data-side="opp" id="sideOppBtn">Opponent</button>
+      </div>
+      <div class="counterbar" id="counterBar" style="display:none"></div>
+      <div id="usArea">
+      <div class="seg ctl" id="modeSeg">
         <button data-mode="lineup">Lineup</button>
         <button data-mode="tap">Tap each player</button>
       </div>
-      <p class="muted small hint" id="modeHint"></p>
-      <div class="units" id="unitRow"></div>
-      <div class="row" id="viewRow" style="justify-content:flex-end;margin-bottom:6px"><button class="btn small" id="saveUnitBtn">Save to unit</button><button class="btn small" id="fieldToggle">Field view</button></div>
-      <div id="fieldView" style="display:none">
+      <p class="muted small hint ctl" id="modeHint"></p>
+      <div class="muted small wonly" id="watchLine" style="margin:0 0 8px"></div>
+      <div class="units ctl" id="unitRow"></div>
+      <div class="row ctl" id="viewRow" style="justify-content:flex-end;margin-bottom:6px"><button class="btn small" id="saveUnitBtn">Save to unit</button><button class="btn small" id="fieldToggle">Field view</button></div>
+      <div id="fieldView" class="ctl" style="display:none">
         <div class="fieldwrap" id="fieldBox"><span class="los">LINE OF SCRIMMAGE</span></div>
         <p class="muted small" style="margin:0 0 6px">Tap a player to see who can replace him at that spot. Bench below.</p>
         <div class="benchbar" id="benchBar"></div>
       </div>
       <div class="grid" id="playerGrid"></div>
-      <div class="sticky-actions">
+      <div class="sticky-actions ctl">
         <div id="lineupActions">
           <div class="onfield" id="onFieldInfo"></div>
         <div class="muted small" id="needLine" style="text-align:center;margin:-4px 0 8px"></div>
@@ -250,15 +269,48 @@
         <h2>Play log</h2>
         <div class="log" id="playLog"></div>
       </div>
+      </div>
+      <div id="oppArea" style="display:none">
+        <div class="card ctl" id="oppSetup">
+          <h2>Opponent roster</h2>
+          <p class="muted small" style="margin:0 0 6px">Type or paste their jersey numbers from the min play sheet. Names are optional. For example <code>2, 5, 7 Smith, 11</code>, or one per line.</p>
+          <textarea id="oppText" rows="4" placeholder="2, 5, 7, 11, 23"></textarea>
+          <div id="oppCurrent" class="muted small" style="margin-top:6px"></div>
+          <div class="row" style="margin-top:8px"><button class="btn primary grow" id="oppLoadBtn">Add players</button><button class="btn" id="oppSetupDone">Done</button></div>
+        </div>
+        <div class="empty" id="oppEmpty" style="display:none">No opponent roster yet. Whoever counts the opponent loads their numbers.</div>
+        <div id="oppCountArea">
+          <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span class="small" id="oppSummary"></span>
+            <span class="row"><button class="btn small ctl" id="oppEditBtn">Edit roster</button><button class="btn small" id="oppCopyBtn">Copy counts</button></span>
+          </div>
+          <div class="muted small wonly" id="oppWatchLine" style="margin:0 0 8px"></div>
+          <div class="grid" id="oppGrid"></div>
+          <div class="sticky-actions ctl">
+            <div class="onfield" id="oppOnField"></div>
+            <button class="btn small" id="oppNoCountBtn" style="width:100%;margin-bottom:6px">Next play is a punt or PAT (no count)</button>
+            <button class="btn primary record" id="oppRecordBtn">Record Play</button>
+            <div class="row" style="margin-top:8px">
+              <button class="btn grow" id="oppUndoBtn">Undo</button>
+              <button class="btn grow" id="oppAllOnBtn">All on</button>
+              <button class="btn grow" id="oppClearBtn">Clear</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Opponent play log</h2>
+            <div class="log" id="oppLog"></div>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <h2>Game</h2>
         <div class="row wrap">
-          <input id="dateEdit" type="date">
-          <input id="oppEdit" placeholder="Opponent" class="grow">
-          <button class="btn" id="playoffBtn">Playoff</button>
-          <button class="btn" id="halfBtn">Halftime</button>
+          <input id="dateEdit" type="date" class="gctl">
+          <input id="oppEdit" placeholder="Opponent" class="grow gctl">
+          <button class="btn gctl" id="playoffBtn">Playoff</button>
+          <button class="btn gctl" id="halfBtn">Halftime</button>
           <button class="btn" id="endGameBtn">Leave</button>
-          <button class="btn primary" id="finalBtn">Game Final</button>
+          <button class="btn primary gctl" id="finalBtn">Game Final</button>
         </div>
         <p class="muted small" style="margin:8px 0 0">Leave keeps the game open for more counting later. Game Final locks it with all its stats; it can still be reopened from the game list if you have to.</p>
       </div>
@@ -419,9 +471,12 @@
     </div>
     <div class="card">
       <h2>Team sync</h2>
-      <p class="muted small" style="margin:0 0 6px">One shared game for every coach. Once connected, this phone and every other one see the same counts, attendance and roster. Works with no signal and catches up when it returns.</p>
-      <input id="syncUrl" placeholder="https://xxxx.supabase.co" autocomplete="off">
-      <input id="syncKey" placeholder="anon key" autocomplete="off" style="margin-top:6px">
+      <p class="muted small" style="margin:0 0 6px">One shared game for every coach. Once connected, every phone sees the same counts, attendance and roster live. Works with no signal and catches up when it returns.</p>
+      <label class="field">Your name, shown to the other coaches when you are counting</label>
+      <input id="coachName" placeholder="e.g. Coach Simon" autocomplete="off" maxlength="30">
+      <label class="field" style="margin-top:8px">Database link and team code</label>
+      <input id="syncUrl" placeholder="https://xxxx-default-rtdb.firebaseio.com" autocomplete="off">
+      <input id="syncKey" placeholder="team code" autocomplete="off" style="margin-top:6px">
       <div class="row" style="margin-top:8px"><button class="btn small" id="syncNowBtn">Sync now</button><span class="muted small grow" id="syncStatus"></span></div>
     </div>
     <div class="card">
@@ -512,10 +567,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.14.2';
-  // Shared team database. Baked in once the project exists; Settings can override.
-  const SYNC_URL = '';
-  const SYNC_KEY = '';
+  const APP_VERSION = '2026.09.14.3';
+  // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
+  // Settings can override. Everything lives under /t/<team code>.
+  const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
+  const TEAM_CODE = 'gdyvp7dgcgedqskwvkaqvwxr';
   let lastCfgHash = '';
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
@@ -733,7 +789,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     outbox: [],          // rows waiting to reach the shared database
     syncSince: {},       // last server timestamp seen per table
     syncBootstrapped: false,
-    syncUrl: '', syncKey: '',
+    syncUrl: '', syncKey: '',  // database URL and team code overrides from Settings
+    coachName: '',       // shown to other phones as who is counting
+    gameSide: 'us',      // Game tab: counting our team or the opponent
+    oppLineup: [],       // opponent players on the field (their jersey numbers)
+    oppNextNoCount: false,
     events: [],          // {id, type:'game'|'practice', date, opponent, present:[ids], plays:[[ids]]}
     currentGameId: null,
     selectedEventId: null,
@@ -753,7 +813,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (!st.deviceId) st.deviceId = uid() + uid();
         st.events.forEach(e => {
           if (!e.rows) e.rows = (e.plays || []).map((pl, i) => ({ id: uid() + uid(), players: pl.slice(), dev: st.deviceId, seq: i, t: 0, del: false }));
-          e.plays = e.rows.filter(r => !r.del && !r.nq).map(r => r.players.slice());
+          syncPlaysView(e);
         });
         return st;
       }
@@ -762,7 +822,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     } catch (e) { console.warn('load failed', e); }
     const fresh = defaults(); fresh.deviceId = uid() + uid(); return fresh;
   }
-  function syncPlaysView(e) { e.plays = (e.rows || []).filter(r => !r.del && !r.nq).map(r => r.players.slice()); e.noCount = (e.rows || []).filter(r => !r.del && r.nq).length; }
+  // Plays for both teams share one list of rows; side says whose play it was.
+  const sideOf = (r) => r.side || 'us';
+  function sideRows(e, sd) { return (e.rows || []).filter(r => !r.del && sideOf(r) === sd); }
+  function syncPlaysView(e) {
+    const us = sideRows(e, 'us'), op = sideRows(e, 'opp');
+    e.plays = us.filter(r => !r.nq).map(r => r.players.slice()); e.noCount = us.filter(r => r.nq).length;
+    e.oppPlays = op.filter(r => !r.nq).map(r => r.players.slice()); e.oppNoCount = op.filter(r => r.nq).length;
+  }
   function applyLink() {
     const w = rosterFromLink('r'), b = rosterFromLink('b');
     if (!w && !b) return;
@@ -848,6 +915,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#hdrSub').textContent = g ? S.team + ' · ' + evLabel(g) + ' · ' + fmtDate(g.date) : S.team + ' team';
     $('#hdrRight').textContent = g ? ((S.mode === 'tap' ? g.plays.length + ' taps' : 'Play ' + g.plays.length) + (g.noCount ? ' +' + g.noCount + ' nc' : '')) : 'v' + APP_VERSION;
     document.title = 'DJFL 4';
+    renderSyncStatus();
   }
 
   function renderGame() {
@@ -861,8 +929,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       if (!gs.length) list.innerHTML = '<div class="empty">No games on the schedule yet.</div>';
       gs.forEach(e => {
         const row = document.createElement('div'); row.className = 'rrow';
-        row.innerHTML = '<span class="grow"><b>' + esc(evLabel(e)) + '</b>' + (e.final ? ' <span class="tag">FINAL</span>' : '') + '<br><span class="muted small">' + fmtDate(e.date) + ' · ' + e.plays.length + ' plays · ' + e.present.length + ' present</span></span>' +
-          (e.final ? '<button class="btn small open">Reopen</button>' : '<button class="btn small open">Count plays</button>');
+        const h = holder(e, 'us'), watching = syncOn() && h && h.dev !== S.deviceId;
+        row.innerHTML = '<span class="grow"><b>' + esc(evLabel(e)) + '</b>' + (e.final ? ' <span class="tag">FINAL</span>' : '') + (watching ? ' <span class="tag live">LIVE</span>' : '') +
+          '<br><span class="muted small">' + fmtDate(e.date) + ' · ' + e.plays.length + ' plays · ' + e.present.length + ' present' + (watching ? ' · ' + esc(h.name || 'another phone') + ' counting' : '') + '</span></span>' +
+          (e.final ? '<button class="btn small open">Reopen</button>' : '<button class="btn small open">' + (watching ? 'Watch' : 'Count plays') + '</button>');
         row.querySelector('.open').onclick = () => {
           if (!e.final) return openGame(e.id);
           ask('Reopen this final game? It goes back to counting until you mark it final again.', () => { e.final = false; pushEvent(e); openGame(e.id); });
@@ -871,7 +941,18 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       });
       return;
     }
-    const tap = S.mode === 'tap';
+    const sd = S.gameSide === 'opp' ? 'opp' : 'us';
+    const watchUs = !canCount(g, 'us');
+    $('#gameArea').classList.toggle('watch-us', watchUs);
+    $('#gameArea').classList.toggle('watch-opp', !canCount(g, 'opp'));
+    renderSideBar(g, sd);
+    renderGameCard(g);
+    $('#usArea').style.display = sd === 'us' ? '' : 'none';
+    $('#oppArea').style.display = sd === 'opp' ? '' : 'none';
+    if (sd === 'opp') { renderOpp(g); return; }
+    const tap = S.mode === 'tap' && !watchUs;
+    const liveUs = sideRows(g, 'us');
+    const lastSet = liveUs.length ? liveUs[liveUs.length - 1].players : [];
     document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode));
     $('#modeHint').innerHTML = tap
       ? 'Each press on a player counts one play for them. Undo takes back the last press.'
@@ -903,17 +984,17 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         b.innerHTML = '<span class="big">' + counts[p.id] + '</span><span class="name">' + esc((n ? '#' + n + ' ' : '') + p.name) + '</span>';
         b.onclick = () => tapPlay(p.id);
       } else {
-        const on = S.lineup.includes(p.id);
+        const on = watchUs ? lastSet.includes(p.id) : S.lineup.includes(p.id);
         const big = n || parts[0], small = n ? p.name : parts.slice(1).join(' ');
-        const pos = on ? (S.spots[p.id] || '') : '';
+        const pos = on && !watchUs ? (S.spots[p.id] || '') : '';
         b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
         b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="big' + (n ? '' : ' txt') + '">' + esc(big) + '</span><span class="name">' + esc(small) + '</span>' +
           (pos ? '<span class="pos">' + esc(pos) + '</span>' : '');
-        b.onclick = () => toggle(p.id);
+        if (!watchUs) b.onclick = () => toggle(p.id);
       }
       grid.appendChild(b);
     });
-    const useField = !tap && S.fieldView;
+    const useField = !tap && S.fieldView && !watchUs;
     $('#fieldView').style.display = useField ? '' : 'none';
     $('#playerGrid').style.display = useField ? 'none' : '';
     $('#viewRow').style.display = tap ? 'none' : '';
@@ -930,7 +1011,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       .sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b)).slice(0, 3);
     const under = presentRoster(g).filter(p => counts[p.id] < activeMin).length;
     const recentDevs = {};
-    (g.rows || []).forEach(r => { if (!r.del && r.t && Date.now() - r.t < 90000) recentDevs[r.dev || '?'] = 1; });
+    liveUs.forEach(r => { if (r.t && Date.now() - r.t < 90000) recentDevs[r.dev || '?'] = 1; });
+    $('#watchLine').innerHTML = watchText(g, 'us', presentRoster(g), counts, liveUs);
     const multi = Object.keys(recentDevs).length > 1 ? '<div style="color:var(--red);font-weight:700;margin-bottom:4px">Two phones are counting this game. Counts will double.</div>' : '';
     $('#needLine').innerHTML = multi + (g.plays.length && offField.length
       ? '<span style="color:var(--amber)">Next in:</span> ' + esc(offField.map(p => lastName(p) + ' ' + counts[p.id]).join(' · ')) +
@@ -941,14 +1023,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#noCountBtn').textContent = S.nextNoCount ? 'NEXT PLAY WILL NOT COUNT · tap to cancel' : 'Next play is a punt or PAT (no count)';
     $('#noCountBtn').classList.toggle('primary', !!S.nextNoCount);
     $('#undoBtn').disabled = g.plays.length === 0;
-    if (document.activeElement !== $('#oppEdit')) $('#oppEdit').value = g.opponent || '';
-    $('#dateEdit').value = g.date;
-    $('#halfBtn').textContent = typeof g.half === 'number' ? 'Undo halftime' : 'Halftime';
-    $('#playoffBtn').textContent = g.playoff ? 'Playoff: min 12' : 'Playoff';
-    $('#playoffBtn').classList.toggle('primary', !!g.playoff);
 
     const log = $('#playLog');
-    const live = (g.rows || []).filter(r => !r.del);
+    const live = liveUs;
     if (!live.length) { log.innerHTML = '<div class="muted">No plays yet.</div>'; return; }
     let qn = 0;
     log.innerHTML = live.map(r => {
@@ -958,6 +1035,192 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     }).reverse().join('') + (typeof g.half === 'number' && g.half === g.plays.length ? '<div style="color:var(--accent);font-weight:700;text-align:center">— Halftime —</div>' : '');
   }
 
+
+  // ---------- who is counting ----------
+  // Each game has two counting jobs, our team and the opponent, each held by one phone.
+  // Every other phone watches that side live. Without sync, this phone does everything.
+  function holder(g, sd) { return (g && g.counters && g.counters[sd]) || null; }
+  function canCount(g, sd) {
+    if (!syncOn()) return true;
+    const h = holder(g, sd);
+    return !!h && h.dev === S.deviceId;
+  }
+  function sideName(g, sd) { return sd === 'us' ? S.team : (g.opponent || 'Opponent'); }
+  function agoText(t) {
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    return s < 60 ? s + 's ago' : s < 3600 ? Math.round(s / 60) + ' min ago' : 'over an hour ago';
+  }
+  function renderSideBar(g, sd) {
+    $('#sideUsBtn').textContent = S.team;
+    $('#sideOppBtn').textContent = g.opponent || 'Opponent';
+    document.querySelectorAll('#sideSeg button').forEach(b => b.classList.toggle('active', b.dataset.side === sd));
+    const bar = $('#counterBar');
+    if (!syncOn()) {
+      bar.style.display = syncReady() ? '' : 'none';
+      if (syncReady()) {
+        bar.innerHTML = '<span class="who">Team sync is off on this phone. Join to see live counts and who is counting.</span><button class="btn small primary" id="counterBtn">Join</button>';
+        $('#counterBtn').onclick = () => askName(() => { startStream(); toast('Joined team sync'); render(); });
+      }
+      return;
+    }
+    bar.style.display = '';
+    const h = holder(g, sd), mine = !!h && h.dev === S.deviceId;
+    const live = sideRows(g, sd), last = live[live.length - 1];
+    let who, btn;
+    if (mine) { who = '<b>You are counting ' + esc(sideName(g, sd)) + '</b>'; btn = '<button class="btn small" id="counterBtn">Stop</button>'; }
+    else if (h) { who = 'Watching · <b>' + esc(h.name || 'Another phone') + '</b> is counting' + (last && last.t ? ' · last play ' + agoText(last.t) : ''); btn = '<button class="btn small" id="counterBtn">Take over</button>'; }
+    else { who = 'Watching · nobody is counting ' + esc(sideName(g, sd)); btn = '<button class="btn small primary" id="counterBtn">Count here</button>'; }
+    bar.innerHTML = '<span class="livedot' + (streamOpen && !syncErr ? ' on' : '') + '"></span><span class="who">' + who + '</span>' + btn;
+    $('#counterBtn').onclick = () => counterAction(g, sd);
+  }
+  function askName(then) {
+    if (S.coachName) return then();
+    const n = window.prompt('Your name, so the other coaches can see who is counting:', '');
+    if (n === null) return;
+    S.coachName = n.trim().slice(0, 30) || 'A coach';
+    save(); then();
+  }
+  function counterAction(g, sd) {
+    const h = holder(g, sd);
+    if (h && h.dev === S.deviceId) {
+      ask('Stop counting ' + sideName(g, sd) + ' on this phone? It switches to watching, and another coach can take over.', () => setCounter(g, sd, false));
+      return;
+    }
+    const go = () => askName(() => setCounter(g, sd, true));
+    if (h) ask((h.name || 'Another phone') + ' is counting ' + sideName(g, sd) + '. Take over on this phone? Their phone switches to watching.', go);
+    else go();
+  }
+  function setCounter(g, sd, on) {
+    if (!g.counters) g.counters = {};
+    if (on) g.counters[sd] = { dev: S.deviceId, name: S.coachName || 'A coach', at: Date.now() };
+    else delete g.counters[sd];
+    pushCounter(g, sd); save(); render();
+    toast(on ? 'Counting ' + sideName(g, sd) + ' on this phone' : 'Stopped counting');
+  }
+  function renderGameCard(g) {
+    if (document.activeElement !== $('#oppEdit')) $('#oppEdit').value = g.opponent || '';
+    $('#dateEdit').value = g.date;
+    $('#halfBtn').textContent = typeof g.half === 'number' ? 'Undo halftime' : 'Halftime';
+    $('#playoffBtn').textContent = g.playoff ? 'Playoff: min 12' : 'Playoff';
+    $('#playoffBtn').classList.toggle('primary', !!g.playoff);
+  }
+  // One line for a watching phone: how many plays, who was on for the last one, who is short.
+  function watchText(g, sd, ros, counts, live) {
+    const qual = live.filter(r => !r.nq).length;
+    const under = ros.filter(p => counts[p.id] < activeMin);
+    const last = live[live.length - 1];
+    const label = (p) => numStr(p) ? '#' + numStr(p) : (p.name || '?');
+    return '<b>' + qual + ' plays</b>' + (last && last.t ? ' · updated ' + agoText(last.t) : '') +
+      (under.length ? ' · <span style="color:var(--red)">' + under.length + ' under ' + activeMin + (under.length <= 8 ? ': ' + esc(under.sort((a, b) => counts[a.id] - counts[b.id]).map(p => label(p) + ' ' + counts[p.id]).join(', ')) : '') + '</span>'
+        : (ros.length ? ' · <span style="color:var(--green)">everyone at ' + activeMin + '</span>' : '')) +
+      (last ? '<br>Highlighted: on the field for the last play' : '');
+  }
+
+  // ---------- opponent play counts ----------
+  // The opponent roster belongs to one game only. Players are usually just jersey numbers.
+  function oppList(g) { return (g.oppRoster || []).slice().sort((a, b) => num(a) - num(b) || String(a.name || '').localeCompare(String(b.name || ''))); }
+  function oppCounts(g) {
+    const c = {};
+    (g.oppRoster || []).forEach(p => { c[p.id] = 0; });
+    (g.oppPlays || []).forEach(pl => pl.forEach(id => { if (id in c) c[id]++; }));
+    return c;
+  }
+  function oppLabel(p) { return p ? (numStr(p) ? '#' + numStr(p) : (p.name || '?')) : '?'; }
+  function parseOppText(txt) {
+    const out = [];
+    String(txt || '').split(/[\n,;]+/).forEach(tok => {
+      const t = tok.trim(); if (!t) return;
+      const m = t.match(/^#?\s*(\d{1,3})(?:\s+|[-.:)]\s*|$)(.*)$/);
+      if (m) out.push({ num: Number(m[1]), name: m[2].trim() });
+      else if (/[a-z]{2}/i.test(t)) out.push({ num: '', name: t });
+    });
+    return out;
+  }
+  let oppEditing = null;
+  function renderOpp(g) {
+    activeMin = minFor(g);
+    const can = canCount(g, 'opp');
+    const ros = oppList(g);
+    const editing = can && (oppEditing === g.id || !ros.length);
+    $('#oppSetup').style.display = editing ? '' : 'none';
+    $('#oppEmpty').style.display = !ros.length && !can ? '' : 'none';
+    $('#oppCountArea').style.display = ros.length ? '' : 'none';
+    if (editing) renderOppSetup(g);
+    const counts = oppCounts(g);
+    const live = sideRows(g, 'opp');
+    const lastSet = live.length ? live[live.length - 1].players : [];
+    S.oppLineup = (S.oppLineup || []).filter(id => ros.some(p => p.id === id));
+    const under = ros.filter(p => counts[p.id] < activeMin);
+    $('#oppSummary').innerHTML = '<b>' + (g.oppPlays || []).length + ' plays</b>' + (g.oppNoCount ? ' <span class="muted">+' + g.oppNoCount + ' no count</span>' : '') + ' · ' +
+      (under.length ? '<span style="color:var(--red)">' + under.length + ' under ' + activeMin + '</span>' : '<span style="color:var(--green)">everyone at ' + activeMin + '</span>');
+    $('#oppWatchLine').innerHTML = watchText(g, 'opp', ros, counts, live);
+    const grid = $('#oppGrid'); grid.innerHTML = '';
+    ros.forEach(p => {
+      const on = can ? S.oppLineup.includes(p.id) : lastSet.includes(p.id);
+      const b = document.createElement('button');
+      b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
+      b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="big' + (numStr(p) ? '' : ' txt') + '">' + esc(numStr(p) || p.name || '?') + '</span>' +
+        '<span class="name">' + esc(numStr(p) ? (p.name || '') : '') + '</span>';
+      if (can) b.onclick = () => { const i = S.oppLineup.indexOf(p.id); if (i >= 0) S.oppLineup.splice(i, 1); else S.oppLineup.push(p.id); save(); renderOpp(g); };
+      grid.appendChild(b);
+    });
+    const n = S.oppLineup.length;
+    $('#oppOnField').innerHTML = '<b>' + n + '</b> on field' + (S.fieldSize ? ' <span class="muted">/ ' + S.fieldSize + '</span>' : '');
+    $('#oppOnField').classList.toggle('over', !!S.fieldSize && n > S.fieldSize);
+    $('#oppRecordBtn').disabled = n === 0;
+    $('#oppRecordBtn').textContent = S.oppNextNoCount ? 'Record (no count)' : 'Record Play ' + ((g.oppPlays || []).length + 1);
+    $('#oppNoCountBtn').textContent = S.oppNextNoCount ? 'NEXT PLAY WILL NOT COUNT · tap to cancel' : 'Next play is a punt or PAT (no count)';
+    $('#oppNoCountBtn').classList.toggle('primary', !!S.oppNextNoCount);
+    $('#oppUndoBtn').disabled = !live.length;
+    const byId = {}; ros.forEach(p => { byId[p.id] = p; });
+    let qn = 0;
+    $('#oppLog').innerHTML = live.length ? live.map(r => {
+      const idx = r.nq ? null : ++qn;
+      return '<div' + (r.nq ? ' style="opacity:.6"' : '') + '><b>' + (r.nq ? 'no count' : '#' + idx) + '</b> · ' + r.players.map(id => esc(oppLabel(byId[id]))).join(', ') + '</div>';
+    }).reverse().join('') : '<div class="muted">No plays yet.</div>';
+  }
+  function renderOppSetup(g) {
+    const counts = oppCounts(g);
+    const ros = oppList(g);
+    const box = $('#oppCurrent');
+    box.innerHTML = ros.length ? ros.length + ' players: ' : 'Nobody yet.';
+    ros.forEach(p => {
+      const b = document.createElement('button');
+      b.className = 'btn small'; b.style.margin = '2px';
+      b.textContent = oppLabel(p) + (p.name && numStr(p) ? ' ' + p.name : '') + (counts[p.id] ? '' : ' ✕');
+      b.onclick = () => {
+        if (counts[p.id]) { toast(oppLabel(p) + ' already has plays, so he stays'); return; }
+        g.oppRoster = (g.oppRoster || []).filter(x => x.id !== p.id);
+        S.oppLineup = S.oppLineup.filter(id => id !== p.id);
+        pushOpp(g); save(); renderOpp(g);
+      };
+      box.appendChild(b);
+    });
+    $('#oppSetupDone').style.display = ros.length ? '' : 'none';
+  }
+  function addOppPlayers(g) {
+    const rows = parseOppText($('#oppText').value);
+    if (!g.oppRoster) g.oppRoster = [];
+    let added = 0;
+    rows.forEach(r => {
+      const dupe = g.oppRoster.some(p => r.num !== '' ? Number(p.num) === r.num : String(p.name || '').toLowerCase() === r.name.toLowerCase());
+      if (dupe) return;
+      g.oppRoster.push({ id: 'o' + uid() + uid(), num: r.num, name: r.name });
+      added++;
+    });
+    if (!added) { toast(rows.length ? 'Those numbers are already in' : 'Type some jersey numbers first'); return; }
+    $('#oppText').value = '';
+    pushOpp(g); save(); renderOpp(g);
+    toast('Added ' + added + ' player' + (added === 1 ? '' : 's'));
+  }
+  function oppSummaryText(g) {
+    const counts = oppCounts(g), min = minFor(g);
+    const ros = oppList(g).sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b));
+    const under = ros.filter(p => counts[p.id] < min);
+    return [(g.opponent || 'Opponent') + ' play counts vs ' + S.team + ' (' + fmtDate(g.date) + ') - ' + (g.oppPlays || []).length + ' plays, minimum ' + min,
+      under.length ? 'Under ' + min + ': ' + under.map(p => oppLabel(p) + ' ' + counts[p.id] + ' (needs ' + (min - counts[p.id]) + ')').join(', ') : 'Everyone has reached ' + min + '.',
+      'All: ' + ros.map(p => oppLabel(p) + ' ' + counts[p.id]).join(', ')].join('\n');
+  }
 
   // Where a position stands on the diagram: r counts rows back from the line,
   // x runs from the left sideline (negative) to the right (positive), centre 0.
@@ -1824,8 +2087,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#minPlays').value = S.minPlays; $('#fieldSize').value = S.fieldSize;
     $('#verLine').textContent = 'Version ' + APP_VERSION + (navigator.onLine ? '' : ' · offline');
     if (document.activeElement !== $('#syncUrl')) $('#syncUrl').value = S.syncUrl || SYNC_URL;
-    if (document.activeElement !== $('#syncKey')) $('#syncKey').value = S.syncKey || SYNC_KEY;
-    $('#syncStatus').textContent = syncStatusText();
+    if (document.activeElement !== $('#syncKey')) $('#syncKey').value = S.syncKey || TEAM_CODE;
+    if (document.activeElement !== $('#coachName')) $('#coachName').value = S.coachName || '';
+    renderSyncStatus();
     if (document.activeElement !== $('#sheetUrl')) $('#sheetUrl').value = S.sheetUrl || '';
     $('#pushBtn').style.display = S.sheetUrl ? '' : 'none';
     const tot = {}; S.roster.forEach(p => tot[p.id] = { plays: 0, games: 0 });
@@ -1843,30 +2107,36 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (i >= 0) S.lineup.splice(i, 1); else S.lineup.push(id);
     save(); renderHeader(); renderGame();
   }
+  function watchingToast(g, sd) { toast((holder(g, sd) ? holder(g, sd).name || 'Another phone' : 'Nobody') + ' is counting. Tap Count here or Take over first.'); }
   function recordPlay() {
     const g = curGame(); if (!g) return;
+    if (!canCount(g, 'us')) return watchingToast(g, 'us');
     const ids = lineupIds(); if (!ids.length) return;
     addPlayRow(g, ids);
     save(); render();
     if (navigator.vibrate) navigator.vibrate(30);
     toast('Play ' + g.plays.length + ' recorded');
   }
-  function addPlayRow(g, ids) {
+  function addPlayRow(g, ids, side) {
     if (!g.rows) g.rows = [];
-    const row = { id: uid() + uid(), players: ids.slice(), dev: S.deviceId, seq: g.rows.length, t: Date.now(), del: false, nq: !!S.nextNoCount };
-    S.nextNoCount = false;
+    const opp = side === 'opp';
+    const row = { id: uid() + uid(), players: ids.slice(), dev: S.deviceId, seq: g.rows.length, t: Date.now(), del: false,
+      nq: opp ? !!S.oppNextNoCount : !!S.nextNoCount, side: opp ? 'opp' : 'us' };
+    if (opp) S.oppNextNoCount = false; else S.nextNoCount = false;
     g.rows.push(row); syncPlaysView(g); pushPlay(g, row);
     return row;
   }
   function tapPlay(id) {
     const g = curGame(); if (!g) return;
+    if (!canCount(g, 'us')) return watchingToast(g, 'us');
     addPlayRow(g, [id]);
     save(); renderHeader(); renderGame(); renderCounts(); renderSettings();
     if (navigator.vibrate) navigator.vibrate(20);
   }
   function undo() {
     const g = curGame(); if (!g || !g.plays.length) return;
-    const live = (g.rows || []).filter(r => !r.del);
+    if (!canCount(g, 'us')) return watchingToast(g, 'us');
+    const live = sideRows(g, 'us');
     const row = live[live.length - 1];
     row.del = true; syncPlaysView(g); pushPlay(g, row);
     const last = row.players;
@@ -1878,6 +2148,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     S.currentGameId = id; S.selectedEventId = id;
     S.lineup = g.plays.length && S.mode === 'lineup' ? g.plays[g.plays.length - 1].slice() : [];
     resetSpots();
+    oppEditing = null;
+    S.oppLineup = g.oppPlays && g.oppPlays.length ? g.oppPlays[g.oppPlays.length - 1].slice() : [];
+    if (syncOn() && canCount(g, 'opp') && !canCount(g, 'us')) S.gameSide = 'opp';
+    if (syncOn() && canCount(g, 'us') && !canCount(g, 'opp')) S.gameSide = 'us';
     save(); render(); showView('game');
   }
   function addPlayer(numValue, name, team) {
@@ -1919,51 +2193,207 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
 
   // ---------- shared team database ----------
-  const PKS = { djfl_config: ['key'], djfl_events: ['id'], djfl_attendance: ['event_id', 'player_id'], djfl_plays: ['id'] };
-  const TABLES = ['djfl_config', 'djfl_events', 'djfl_attendance', 'djfl_plays'];
-  let syncTimer = null, syncing = false, lastSyncAt = 0, syncErr = '';
-  function syncCfg() { return { url: String(S.syncUrl || SYNC_URL).replace(/\/+$/, ''), key: S.syncKey || SYNC_KEY }; }
-  function syncOn() { const c = syncCfg(); return !!(c.url && c.key); }
-  function enqueue(table, row) { S.outbox.push({ table: table, row: row }); localStorage.setItem(KEY, JSON.stringify(S)); scheduleSync(400); }
+  // Firebase Realtime Database over plain REST, no SDK. Every record is written whole under
+  // /t/<team code>. One live stream (EventSource) brings each change from every phone the
+  // moment it lands; writes wait in an outbox that survives no signal and app restarts.
+  let syncErr = '', lastSyncAt = 0, flushing = false, flushTimer = null;
+  let stream = null, streamOpen = false, streamAt = 0, mirror = null;
+  const SV = { '.sv': 'timestamp' };
+  function syncCfg() {
+    return { url: String(S.syncUrl || SYNC_URL).trim().replace(/\/+$/, ''), code: String(S.syncKey || TEAM_CODE).trim() };
+  }
+  // A phone joins only once its coach has entered a name, so whoever sets up first supplies the team's copy.
+  function syncReady() { const c = syncCfg(); return /^(https:\/\/|http:\/\/localhost[:/])/.test(c.url) && /^[A-Za-z0-9_-]{16,}$/.test(c.code); }
+  function syncOn() { return syncReady() && !!S.coachName; }
+  function dbBase() { const c = syncCfg(); return c.url + '/t/' + c.code; }
+  function enqueue(path, value) {
+    S.outbox = (S.outbox || []).filter(o => o.path && o.path !== path);
+    S.outbox.push({ path: path, value: value });
+    if (mirror) setIn(mirror, path.split('/'), stripSv(value));
+    localStorage.setItem(KEY, JSON.stringify(S));
+    scheduleSync(300);
+  }
+  function stripSv(v) { if (!v || typeof v !== 'object') return v; const o = {}; Object.keys(v).forEach(k => { if (k !== 'u') o[k] = v[k]; }); return o; }
   function enqueueConfig() {
-    enqueue('djfl_config', { key: 'roster', data: S.roster });
-    enqueue('djfl_config', { key: 'units', data: S.units });
+    enqueue('config/roster', { json: JSON.stringify(S.roster), u: SV });
+    enqueue('config/units', { json: JSON.stringify(S.units), u: SV });
   }
-  function pushEvent(e) {
+  function eventRecord(e, deleted) {
+    const r = { type: e.type, date: e.date, opponent: e.opponent || '', final: !!e.final, playoff: !!e.playoff, deleted: !!deleted, u: SV };
+    if (e.team) r.team = e.team;
+    if (!deleted && typeof e.half === 'number') r.half = e.half;
+    return r;
+  }
+  function pushEvent(e) { if (syncOn()) enqueue('events/' + e.id, eventRecord(e, false)); }
+  function pushEventDeleted(e) { if (syncOn()) enqueue('events/' + e.id, eventRecord(e, true)); }
+  function pushAttendanceRow(e, playerId, present) { if (syncOn()) enqueue('attendance/' + e.id + '/' + playerId, { p: !!present, u: SV }); }
+  function pushAllAttendance(e) { if (!syncOn()) return; poolFor(e).forEach(pl => pushAttendanceRow(e, pl.id, e.present.indexOf(pl.id) >= 0)); }
+  function pushPlay(g, row) {
     if (!syncOn()) return;
-    enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: (typeof e.half === 'number') ? e.half : null, final: !!e.final, playoff: !!e.playoff, deleted: false });
+    enqueue('plays/' + g.id + '/' + row.id, { players: row.players.join(','), dev: row.dev || S.deviceId, seq: row.seq || 0, t: row.t || 0,
+      del: !!row.del, nq: !!row.nq, side: sideOf(row), u: SV });
   }
-  function pushEventDeleted(e) { if (syncOn()) enqueue('djfl_events', { id: e.id, type: e.type, team: e.team || null, date: e.date, opponent: e.opponent || '', half: null, deleted: true }); }
-  function pushAttendanceRow(e, playerId, present) { if (syncOn()) enqueue('djfl_attendance', { event_id: e.id, player_id: playerId, present: !!present }); }
-  function pushAllAttendance(e) { if (!syncOn()) return; poolFor(e).forEach(pl => enqueue('djfl_attendance', { event_id: e.id, player_id: pl.id, present: e.present.indexOf(pl.id) >= 0 })); }
-  function pushPlay(g, row) { if (syncOn()) enqueue('djfl_plays', { id: row.id, game_id: g.id, players: row.players, device: row.dev || S.deviceId, seq: row.seq || 0, deleted: !!row.del, qualifying: !row.nq }); }
+  function pushOpp(g) { if (syncOn()) enqueue('opp/' + g.id, { json: JSON.stringify(g.oppRoster || []), u: SV }); }
+  function pushCounter(g, sd) {
+    if (!syncOn()) return;
+    const h = g.counters && g.counters[sd];
+    enqueue('counters/' + g.id + '/' + sd, h ? { dev: h.dev, name: h.name || '', at: SV } : null);
+  }
   function pushEverything() {
     enqueueConfig();
-    S.events.forEach(e => { pushEvent(e); pushAllAttendance(e); (e.rows || []).forEach(r => pushPlay(e, r)); });
+    S.events.forEach(e => { pushEvent(e); pushAllAttendance(e); (e.rows || []).forEach(r => pushPlay(e, r)); if (e.oppRoster && e.oppRoster.length) pushOpp(e); });
   }
-  function scheduleSync(ms) { if (!syncOn()) return; clearTimeout(syncTimer); syncTimer = setTimeout(runSync, ms || 0); }
-  async function api(path, opts) {
-    const c = syncCfg();
-    const h = Object.assign({ apikey: c.key, Authorization: 'Bearer ' + c.key, 'Content-Type': 'application/json' }, (opts && opts.headers) || {});
-    const r = await fetch(c.url + '/rest/v1/' + path, Object.assign({}, opts, { headers: h }));
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return (r.status === 204 || r.status === 201) ? null : r.json();
-  }
-  function dedupe(t, rows) { const m = {}; rows.forEach(r => { m[PKS[t].map(k => r[k]).join('|')] = r; }); return Object.keys(m).map(k => m[k]); }
+  function scheduleSync(ms) { if (!syncOn()) return; clearTimeout(flushTimer); flushTimer = setTimeout(runSync, ms || 0); }
+
   async function flushOutbox() {
-    const groups = {};
-    S.outbox.forEach(o => { (groups[o.table] = groups[o.table] || []).push(o.row); });
-    for (const t of TABLES) {
-      if (!groups[t]) continue;
-      const q = t + '?on_conflict=' + PKS[t].join(',');
-      await api(q, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(dedupe(t, groups[t])) });
+    if (flushing || !S.outbox.length) return;
+    flushing = true;
+    try {
+      S.outbox = S.outbox.filter(o => o.path);
+      while (S.outbox.length) {
+        const batch = S.outbox.slice(0, 300), body = {};
+        batch.forEach(o => { body[o.path] = o.value; });
+        const r = await fetch(dbBase() + '.json', { method: 'PATCH', body: JSON.stringify(body) });
+        if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'the database refused access (check its rules)' : 'HTTP ' + r.status);
+        // Only drop what was sent; anything queued meanwhile for the same path stays.
+        S.outbox = S.outbox.filter(o => !batch.some(b => b === o));
+        localStorage.setItem(KEY, JSON.stringify(S));
+      }
+      lastSyncAt = Date.now(); syncErr = '';
+    } catch (e) {
+      syncErr = navigator.onLine === false ? 'no signal' : String(e && e.message ? e.message : e);
+      clearTimeout(flushTimer); flushTimer = setTimeout(runSync, 5000);
+    } finally {
+      flushing = false;
+      renderSyncStatus();
     }
-    S.outbox = [];
-    localStorage.setItem(KEY, JSON.stringify(S));
   }
-  async function pullTable(t, since) {
-    const q = t + '?select=*&order=updated_at.asc&limit=1000' + (since ? '&updated_at=gt.' + encodeURIComponent(since) : '');
-    return api(q, { method: 'GET' });
+  async function runSync() {
+    if (!syncOn()) return false;
+    if (!stream || stream.readyState === 2) startStream();
+    await flushOutbox();
+    return true;
+  }
+
+  function startStream() {
+    stopStream();
+    if (!syncOn() || typeof EventSource === 'undefined') return;
+    const es = new EventSource(dbBase() + '.json');
+    stream = es;
+    es.addEventListener('put', ev => onStream(ev, false));
+    es.addEventListener('patch', ev => onStream(ev, true));
+    es.addEventListener('keep-alive', () => { streamAt = Date.now(); });
+    es.addEventListener('cancel', () => { syncErr = 'the database refused access (check its rules)'; stopStream(); renderSyncStatus(); });
+    es.onopen = () => { streamOpen = true; streamAt = Date.now(); renderSyncStatus(); scheduleSync(100); };
+    es.onerror = () => { streamOpen = false; renderSyncStatus(); };
+  }
+  function stopStream() { if (stream) { try { stream.close(); } catch (e) { /* closed */ } } stream = null; streamOpen = false; }
+  function setIn(obj, path, val) {
+    let o = obj;
+    for (let i = 0; i < path.length - 1; i++) { if (!o[path[i]] || typeof o[path[i]] !== 'object') o[path[i]] = {}; o = o[path[i]]; }
+    const k = path[path.length - 1];
+    if (val === null || val === undefined) delete o[k]; else o[k] = val;
+  }
+  function onStream(ev, isPatch) {
+    streamAt = Date.now(); streamOpen = true; lastSyncAt = Date.now();
+    let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (!msg || typeof msg.path !== 'string') return;
+    const at = msg.path.split('/').filter(Boolean);
+    if (!at.length && !isPatch) { gotSnapshot(msg.data || {}); return; }
+    if (!mirror) return;   // changes before the first snapshot are covered by it
+    const paths = [];
+    if (isPatch) Object.keys(msg.data || {}).forEach(k => { const p = at.concat(k.split('/').filter(Boolean)); setIn(mirror, p, msg.data[k]); paths.push(p); });
+    else { setIn(mirror, at, msg.data); paths.push(at); }
+    S.outbox.forEach(o => setIn(mirror, o.path.split('/'), stripSv(o.value)));
+    if (applyMirror(paths)) { localStorage.setItem(KEY, JSON.stringify(S)); render(); }
+    else renderSyncStatus();
+  }
+  // The whole team tree: on first connect, and again after every reconnect.
+  function gotSnapshot(data) {
+    mirror = data;
+    S.outbox.forEach(o => setIn(mirror, o.path.split('/'), stripSv(o.value)));
+    let changed = false;
+    const serverHasTeam = !!(data.config && data.config.roster);
+    // A brand-new or emptied database gets this phone's copy.
+    if (!serverHasTeam) S.syncBootstrapped = false;
+    if (!S.syncBootstrapped) {
+      S.syncBootstrapped = true;
+      if (!serverHasTeam) { pushEverything(); lastCfgHash = JSON.stringify([S.roster, S.units]); localStorage.setItem(KEY, JSON.stringify(S)); renderSyncStatus(); return; }
+      changed = applyMirror([[]]);
+      // Events only this phone has: keep the ones with plays and send them up, drop the rest
+      // (a fresh install seeds its own copy of the practices, which the server already has).
+      const keep = [];
+      S.events.forEach(e => {
+        if (data.events && data.events[e.id]) { keep.push(e); return; }
+        if ((e.rows || []).some(r => !r.del)) { keep.push(e); pushEvent(e); pushAllAttendance(e); e.rows.forEach(r => pushPlay(e, r)); }
+        else if (S.currentGameId === e.id) { S.currentGameId = null; S.lineup = []; }
+      });
+      if (keep.length !== S.events.length) { S.events = keep; changed = true; }
+      if (S.selectedEventId && !ev(S.selectedEventId)) S.selectedEventId = null;
+      lastCfgHash = JSON.stringify([S.roster, S.units]);
+    } else {
+      changed = applyMirror([[]]);
+    }
+    localStorage.setItem(KEY, JSON.stringify(S));
+    if (changed) render(); else renderSyncStatus();
+  }
+  // Turn changed paths in the mirror into the row shapes applyRemote understands.
+  function applyMirror(paths) {
+    const M = mirror || {};
+    const want = { config: {}, events: {}, attendance: {}, plays: {}, opp: false, counters: false };
+    const all = { config: false, events: false, attendance: false, plays: false };
+    paths.forEach(p => {
+      const kind = p[0];
+      if (!kind) { Object.keys(all).forEach(k => { all[k] = true; }); want.opp = want.counters = true; return; }
+      if (kind === 'opp' || kind === 'counters') { want[kind] = true; return; }
+      if (!(kind in all)) return;
+      if (p.length < 2) { all[kind] = true; return; }
+      if (kind === 'attendance' || kind === 'plays') {
+        const key = p[1];
+        if (p.length < 3) want[kind][key] = true;
+        else { if (want[kind][key] !== true) (want[kind][key] = want[kind][key] || {})[p[2]] = 1; }
+      } else want[kind][p[1]] = 1;
+    });
+    const pick = (kind) => {
+      const node = M[kind] || {};
+      return all[kind] ? Object.keys(node) : Object.keys(want[kind]);
+    };
+    let changed = false;
+    const cfg = pick('config').map(k => {
+      const rec = M.config && M.config[k];
+      let data = null; try { data = rec && rec.json ? JSON.parse(rec.json) : null; } catch (e) { data = null; }
+      return data ? { key: k, data: data } : null;
+    }).filter(Boolean);
+    if (cfg.length && applyRemote('djfl_config', cfg)) changed = true;
+    const evs = pick('events').map(id => { const r = M.events && M.events[id]; return r ? Object.assign({ id: id }, r) : null; }).filter(Boolean);
+    if (evs.length && applyRemote('djfl_events', evs)) changed = true;
+    const nested = (kind, toRow) => {
+      const out = [];
+      pick(kind).forEach(gid => {
+        const node = (M[kind] || {})[gid] || {};
+        const sub = all[kind] || want[kind][gid] === true ? Object.keys(node) : Object.keys(want[kind][gid] || {});
+        sub.forEach(k => { if (node[k]) out.push(toRow(gid, k, node[k])); });
+      });
+      return out;
+    };
+    const att = nested('attendance', (eid, pid, r) => ({ event_id: eid, player_id: pid, present: !!r.p }));
+    if (att.length && applyRemote('djfl_attendance', att)) changed = true;
+    const plays = nested('plays', (gid, id, r) => ({ id: id, game_id: gid, players: String(r.players || '').split(',').filter(Boolean),
+      device: r.dev || '', seq: r.seq || 0, t: r.t || 0, deleted: !!r.del, qualifying: !r.nq, side: r.side || 'us' }));
+    if (plays.length && applyRemote('djfl_plays', plays)) changed = true;
+    if (want.opp) S.events.forEach(g => {
+      const rec = M.opp && M.opp[g.id];
+      if (!rec) return;
+      let list = null; try { list = JSON.parse(rec.json); } catch (e) { list = null; }
+      if (Array.isArray(list) && JSON.stringify(list) !== JSON.stringify(g.oppRoster || [])) { g.oppRoster = list; changed = true; }
+    });
+    if (want.counters) S.events.forEach(g => {
+      const rec = (M.counters && M.counters[g.id]) || {};
+      const next = {};
+      ['us', 'opp'].forEach(sd => { if (rec[sd] && rec[sd].dev) next[sd] = { dev: rec[sd].dev, name: rec[sd].name || '', at: rec[sd].at || 0 }; });
+      if (JSON.stringify(next) !== JSON.stringify(g.counters || {})) { g.counters = next; changed = true; }
+    });
+    return changed;
   }
   function applyRemote(t, rows) {
     let changed = false;
@@ -1983,7 +2413,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           return;
         }
         if (i < 0) {
-          S.events.push({ id: r.id, type: r.type, team: r.team || undefined, date: r.date, opponent: r.opponent || '', present: [], plays: [], rows: [], half: (r.half == null ? undefined : r.half), final: !!r.final, playoff: !!r.playoff });
+          const e = { id: r.id, type: r.type, team: r.team || undefined, date: r.date, opponent: r.opponent || '', present: [], plays: [], rows: [], half: (r.half == null ? undefined : r.half), final: !!r.final, playoff: !!r.playoff };
+          const att = mirror && mirror.attendance && mirror.attendance[r.id];
+          if (att) e.present = Object.keys(att).filter(pid => att[pid] && att[pid].p);
+          S.events.push(e);
           changed = true;
         } else {
           const e = S.events[i];
@@ -2007,7 +2440,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       rows.forEach(r => {
         const g = S.events.find(x => x.id === r.game_id); if (!g) return;
         if (!g.rows) g.rows = [];
-        const local = { id: r.id, players: Array.isArray(r.players) ? r.players : [], dev: r.device || '', seq: r.seq || 0, t: Date.parse(r.created_at) || 0, del: !!r.deleted, nq: r.qualifying === false };
+        const local = { id: r.id, players: Array.isArray(r.players) ? r.players : [], dev: r.device || '', seq: r.seq || 0, t: r.t || 0, del: !!r.deleted, nq: r.qualifying === false, side: r.side || 'us' };
         const i = g.rows.findIndex(x => x.id === r.id);
         if (i < 0) { g.rows.push(local); changed = true; }
         else if (JSON.stringify(g.rows[i]) !== JSON.stringify(local)) { g.rows[i] = local; changed = true; }
@@ -2017,56 +2450,18 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     }
     return changed;
   }
-  async function runSync() {
-    if (!syncOn() || syncing) return false;
-    syncing = true; syncErr = '';
-    let changed = false;
-    try {
-      if (S.outbox.length) await flushOutbox();
-      const first = !S.syncBootstrapped;
-      let cfgSeen = false;
-      const serverEventIds = {};
-      for (const t of TABLES) {
-        const rows = await pullTable(t, S.syncSince[t]);
-        if (rows && rows.length) {
-          if (t === 'djfl_config') cfgSeen = true;
-          if (t === 'djfl_events') rows.forEach(r => { if (!r.deleted) serverEventIds[r.id] = 1; });
-          if (applyRemote(t, rows)) changed = true;
-          S.syncSince[t] = rows[rows.length - 1].updated_at;
-        }
-      }
-      if (first) {
-        S.syncBootstrapped = true;
-        if (!cfgSeen) { pushEverything(); await flushOutbox(); }
-        else {
-          const keep = [];
-          S.events.forEach(e => {
-            if (serverEventIds[e.id]) { keep.push(e); return; }
-            const counted = (e.rows || []).some(r => !r.del);
-            if (counted) { keep.push(e); pushEvent(e); pushAllAttendance(e); e.rows.forEach(r => pushPlay(e, r)); }
-            else if (S.currentGameId === e.id) { S.currentGameId = null; S.lineup = []; }
-          });
-          if (keep.length !== S.events.length) { S.events = keep; changed = true; }
-          if (S.selectedEventId && !S.events.some(e => e.id === S.selectedEventId)) S.selectedEventId = null;
-          if (S.outbox.length) await flushOutbox();
-        }
-        lastCfgHash = JSON.stringify([S.roster, S.units]);
-      }
-      lastSyncAt = Date.now();
-      localStorage.setItem(KEY, JSON.stringify(S));
-      if (changed) render(); else renderSettings();
-    } catch (e) {
-      syncErr = String(e && e.message ? e.message : e);
-      renderSettings();
-    } finally {
-      syncing = false;
-    }
-    return changed;
-  }
   function syncStatusText() {
-    if (!syncOn()) return 'Not connected. Paste the project URL and key, or wait for the built-in ones.';
-    const when = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : 'never';
-    return 'Connected · last sync ' + when + (S.outbox.length ? ' · ' + S.outbox.length + ' waiting to send' : '') + (syncErr ? ' · problem: ' + syncErr : '');
+    if (!syncReady()) return 'Not connected. Enter the database link and team code.';
+    if (!S.coachName) return 'Enter your name above to join team sync.';
+    const waiting = S.outbox.length ? ' · ' + S.outbox.length + ' waiting to send' : '';
+    if (syncErr) return 'Problem: ' + syncErr + waiting;
+    if (streamOpen) return 'Live' + waiting;
+    return (navigator.onLine === false ? 'No signal, will catch up' : 'Connecting…') + waiting;
+  }
+  function renderSyncStatus() {
+    const el = $('#syncStatus'); if (el) el.textContent = syncStatusText();
+    const dot = $('#liveDot');
+    if (dot) { dot.style.display = syncOn() ? '' : 'none'; dot.className = 'livedot' + (streamOpen && !syncErr ? ' on' : ''); dot.title = syncStatusText(); }
   }
 
   // ---------- google sheet push ----------
@@ -2180,7 +2575,38 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (g && g.plays.length && b.dataset.mode !== S.mode) { toast('Undo the plays first, or start a new game, to change how you count'); return; }
     S.mode = b.dataset.mode; save(); render();
   });
-  $('#startGameBtn').onclick = () => { const g = addEvent('game', $('#newDate').value, $('#oppInput').value); $('#oppInput').value = ''; openGame(g.id); };
+  $('#startGameBtn').onclick = () => {
+    const g = addEvent('game', $('#newDate').value, $('#oppInput').value); $('#oppInput').value = '';
+    if (syncOn()) { g.counters = { us: { dev: S.deviceId, name: S.coachName || 'A coach', at: Date.now() } }; pushCounter(g, 'us'); }
+    S.gameSide = 'us';
+    openGame(g.id);
+  };
+  document.querySelectorAll('#sideSeg button').forEach(b => b.onclick = () => { S.gameSide = b.dataset.side; save(); renderGame(); });
+  const oppAct = (fn) => () => { const g = curGame(); if (!g) return; if (!canCount(g, 'opp')) return watchingToast(g, 'opp'); fn(g); };
+  $('#oppLoadBtn').onclick = oppAct(addOppPlayers);
+  $('#oppSetupDone').onclick = () => { oppEditing = null; renderGame(); };
+  $('#oppEditBtn').onclick = oppAct(g => { oppEditing = g.id; renderGame(); });
+  $('#oppRecordBtn').onclick = oppAct(g => {
+    if (!S.oppLineup.length) return;
+    addPlayRow(g, S.oppLineup, 'opp'); save(); renderGame();
+    if (navigator.vibrate) navigator.vibrate(30);
+    toast('Opponent play ' + g.oppPlays.length + ' recorded');
+  });
+  $('#oppNoCountBtn').onclick = oppAct(() => { S.oppNextNoCount = !S.oppNextNoCount; save(); renderGame(); });
+  $('#oppUndoBtn').onclick = oppAct(g => {
+    const live = sideRows(g, 'opp'); if (!live.length) return;
+    const row = live[live.length - 1];
+    row.del = true; syncPlaysView(g); pushPlay(g, row);
+    S.oppLineup = row.players.slice();
+    save(); renderGame(); toast('Undid last opponent play');
+  });
+  $('#oppAllOnBtn').onclick = oppAct(g => { S.oppLineup = oppList(g).map(p => p.id); save(); renderGame(); toast('Everyone on. Tap the ones who are off.'); });
+  $('#oppClearBtn').onclick = oppAct(() => { S.oppLineup = []; save(); renderGame(); });
+  $('#oppCopyBtn').onclick = async () => {
+    const g = curGame(); if (!g) return;
+    const t = oppSummaryText(g);
+    try { await navigator.clipboard.writeText(t); toast('Opponent counts copied'); } catch (err) { window.prompt('Copy this:', t); }
+  };
   $('#oppInput').onkeydown = (e) => { if (e.key === 'Enter') $('#startGameBtn').click(); };
   $('#recordBtn').onclick = recordPlay;
   $('#noCountBtn').onclick = () => { S.nextNoCount = !S.nextNoCount; save(); renderGame(); };
@@ -2240,19 +2666,41 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#pushBtn').onclick = pushAttendance;
   const syncCfgChanged = () => {
     const u = $('#syncUrl').value.trim(), k = $('#syncKey').value.trim();
-    if (u !== (S.syncUrl || '') || k !== (S.syncKey || '')) { S.syncUrl = u; S.syncKey = k; S.syncSince = {}; S.syncBootstrapped = false; save(); scheduleSync(300); }
+    if (u !== (S.syncUrl || '') || k !== (S.syncKey || '')) {
+      S.syncUrl = u; S.syncKey = k; S.syncBootstrapped = false; S.outbox = []; mirror = null; syncErr = '';
+      save(); startStream(); renderSyncStatus();
+    }
   };
   $('#syncUrl').onchange = syncCfgChanged;
   $('#syncKey').onchange = syncCfgChanged;
-  $('#syncNowBtn').onclick = async () => { $('#syncStatus').textContent = 'Syncing...'; await runSync(); renderSettings(); };
+  $('#coachName').onchange = (e) => {
+    const had = !!S.coachName;
+    S.coachName = e.target.value.trim().slice(0, 30); save();
+    if (S.coachName && !had) { startStream(); toast('Joined team sync'); }
+    if (!S.coachName) stopStream();
+    render();
+  };
+  $('#syncNowBtn').onclick = () => { syncErr = ''; startStream(); scheduleSync(0); renderSyncStatus(); };
+  // The stream sends a keep-alive about every 30 seconds. If it goes quiet, or a phone woke from
+  // sleep with a dead connection, open a fresh one; the snapshot it starts with catches up.
   setInterval(() => {
     if (!syncOn()) return;
-    const busy = curGame() || $('#view-attend').classList.contains('active');
-    if (busy || Date.now() - lastSyncAt > 30000) runSync();
-  }, 5000);
-  window.addEventListener('online', () => scheduleSync(500));
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(500); });
-  window.__djfl = { sync: runSync, state: () => S, seasonText: seasonSummaryText };
+    if (!stream || stream.readyState === 2 || Date.now() - streamAt > 75000) startStream();
+    if (S.outbox.length) scheduleSync(0);
+  }, 15000);
+  window.addEventListener('online', () => { startStream(); scheduleSync(500); });
+  // A watching phone refreshes its "last play 20s ago" line.
+  setInterval(() => {
+    const g = curGame();
+    if (!g || !syncOn() || document.visibilityState !== 'visible' || !$('#view-game').classList.contains('active')) return;
+    if (!canCount(g, S.gameSide === 'opp' ? 'opp' : 'us')) renderGame();
+  }, 10000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !syncOn()) return;
+    if (!streamOpen || Date.now() - streamAt > 40000) startStream();
+    scheduleSync(300);
+  });
+  window.__djfl = { sync: runSync, state: () => S, mirror: () => mirror, seasonText: seasonSummaryText };
   $('#sheetUrl').onchange = (e) => { S.sheetUrl = e.target.value.trim(); save(); render(); };
   $('#sheetTestBtn').onclick = async () => {
     S.sheetUrl = $('#sheetUrl').value.trim(); save();
@@ -2349,7 +2797,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   seedDefaults();
   applyLink();
   lastCfgHash = JSON.stringify([S.roster, S.units]);
-  scheduleSync(1500);
+  if (syncOn()) { startStream(); scheduleSync(1500); }
   // ---------- offline + updates ----------
   // The service worker caches the app so it opens with no signal. The page is always
   // fetched network-first, so a connection means the newest version. While the app is

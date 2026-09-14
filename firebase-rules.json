@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "t": {
+      "$team": {
+        ".read": "$team.length >= 20",
+        ".write": "$team.length >= 20"
+      }
+    }
+  }
+}

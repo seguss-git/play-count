@@ -37,18 +37,24 @@ Single file, no build, no server. Open `index.html` in any phone browser. Everyt
 
 ## Team sync: one shared game for every coach
 
-Without sync, each phone is its own island. With it, every coach sees the same counts, attendance, roster and units, live. It runs on a free Supabase project that you own.
+Without sync, each phone is its own island. With it, every coach sees the same counts, attendance, roster and units, live. It runs on a free Firebase Realtime Database that you own.
 
-**One-time setup, about ten minutes:**
+**One-time setup, about five minutes:**
 
-1. Go to supabase.com, sign in, and create a new project. Any name, any region, set a database password and keep it somewhere.
-2. In the project, open the SQL editor, paste the contents of `supabase.sql` from this repository, and click Run. It creates four small tables and the permissions the app needs.
-3. Open Project Settings, then API. Copy the **Project URL** and the **anon public** key.
-4. Send those two values to whoever maintains this app so they can be built in, or paste them into Settings, Team sync, on each phone.
+1. Go to console.firebase.google.com, create a project (Google Analytics can be off).
+2. Open Build, then Realtime Database, and create a database in locked mode.
+3. On its Rules tab, replace everything with the contents of `firebase-rules.json` from this repository and Publish.
+4. Copy the database link shown on the Data tab (`https://<project>-default-rtdb.firebaseio.com`) and set it as `SYNC_URL` in index.html. The team code, `TEAM_CODE`, is already there. Both can also be typed into Settings, Team sync, on a phone.
 
-**How it behaves.** Every change a phone makes goes into a local queue and is sent the moment there is signal. Every five seconds during a game, and every thirty otherwise, each phone pulls what the others sent. Plays are individual rows with an id and the phone that recorded them, so nothing is lost or double-counted by the sync itself. If two phones both record plays for the same game within ninety seconds, the Game tab shows a red warning, because that would double the counts. The rule is one counter per game; everyone else watches.
+The team's database (`djfl4-c1d2b`) is already built in. **A phone joins when its coach enters a name** in Settings, Team sync (or taps Join on the Game tab). The first phone to join uploads its roster, units and attendance as the team's copy, so the head coach should join first; every phone after that takes the team's copy, and only adds games of its own that already have plays.
 
-The anon key is designed to be public. The database holds player names, attendance and play counts and nothing else.
+**Who counts.** Each game has two counting jobs, our team and the opponent, and each belongs to one phone. The switch at the top of the Game tab flips between the two sides; the bar under it says who is counting that side, with **Count here**, **Take over** (after a confirm) or **Stop**. The phone that starts a game counts our team. Every other phone watches that side live: the same player grid with counts, the players from the last play highlighted, and who is under the minimum, with Record and Undo hidden so counts cannot double. Set your name in Settings so the others see who is counting.
+
+**Opponent counts.** On the opponent side, whoever counts it types or pastes the jersey numbers from the other team's minimum play sheet (`2, 5 Smith, 7`, or one per line). Counting works like Lineup mode: tap who is on, Record Play each snap, with its own punt/PAT no-count button and Undo. Anyone under the minimum is flagged, and Copy counts puts a summary on the clipboard for the quarter reviews. The opponent roster belongs to that game only.
+
+**How it behaves.** Every change goes into a local queue and is sent the moment there is signal; a live stream brings every other phone's changes within a second or two, and a phone that loses signal catches up from a fresh snapshot when it returns. Plays are individual records with an id and the phone that recorded them, so nothing is lost or double-counted by the sync itself. The green dot in the header means the phone is live.
+
+The database holds player names, attendance and play counts and nothing else. Data sits under a long team code that the rules require; anyone who has the app's code can read and write it, so do not put anything private there.
 
 ## Offline and updates
 
