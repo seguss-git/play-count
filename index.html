@@ -415,6 +415,15 @@
       <button data-team="Blue">Blue</button>
     </div>
     <p class="muted small hint" id="rosterNote"></p>
+    <div class="card" id="unitsCard">
+      <h2><span id="unitsHead">Units</span> <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
+      <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
+      <div id="unitList" class="ulist"></div>
+      <div class="row wrap" style="margin-top:10px">
+        <button class="btn small" id="newUnitBtn">New unit</button>
+        <button class="btn small" id="chartBtn">Import unit chart</button>
+      </div>
+    </div>
     <div class="card">
       <h2 id="addHead">Add player</h2>
       <form id="addForm" class="row">
@@ -434,15 +443,6 @@
       <p class="muted small" style="margin:0 0 6px">Add jersey numbers in the # box when you have them. Absences are handled per game on the Attendance tab.</p>
       <div id="rosterList"></div>
       <div class="row" style="margin-top:10px" id="loadTeamRow"><button class="btn small" id="loadTeamBtn">Load team roster</button><span class="muted small">Re-adds anyone from your team link who is missing.</span></div>
-    </div>
-    <div class="card" id="unitsCard">
-      <h2><span id="unitsHead">Units</span> <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
-      <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
-      <div id="unitList" class="ulist"></div>
-      <div class="row wrap" style="margin-top:10px">
-        <button class="btn small" id="newUnitBtn">New unit</button>
-        <button class="btn small" id="chartBtn">Import unit chart</button>
-      </div>
     </div>
     <div class="card" id="fitCard">
       <h2>Best fit by position <span class="muted plain">(from combine testing)</span></h2>
@@ -598,7 +598,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.6';
+  const APP_VERSION = '2026.09.19.7';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -784,13 +784,30 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     });
     if (newOff.length) { importChartText([SEED_OFFENSE[0]].concat(newOff).join('\n'), 'White'); touched = true; }
     // Alternates arrived after the units did. A unit that has never had any gets the seeded ones, once.
-    parseChart(SEED_OFFENSE.join('\n'), 'White').rows.forEach(r => {
+    // A unit a coach built by hand also gets a seeded spot filled when nobody holds it, and a seeded
+    // alternate who sits in the unit with no position becomes the alternate. Once per phone.
+    const seedOff = parseChart(SEED_OFFENSE.join('\n'), 'White').rows;
+    seedOff.forEach(r => {
       const u = unitsFor('White').find(x => String(x.name).trim().toUpperCase() === r.name);
-      if (!u || u.alts) return;
-      u.alts = {};
-      r.picks.forEach(pk => { if (pk.alt && pk.pos && u.members.indexOf(pk.id) < 0) u.alts[pk.id] = pk.pos; });
-      touched = true;
+      if (!u) return;
+      if (!u.alts) {
+        u.alts = {};
+        r.picks.forEach(pk => { if (pk.alt && pk.pos && u.members.indexOf(pk.id) < 0) u.alts[pk.id] = pk.pos; });
+        touched = true;
+      }
+      if (S.offFix1) return;
+      if (!u.pos) u.pos = {};
+      r.picks.forEach(pk => {
+        if (!pk.alt || !pk.pos || u.members.indexOf(pk.id) < 0 || u.pos[pk.id]) return;
+        u.members = u.members.filter(i => i !== pk.id); u.alts[pk.id] = pk.pos; touched = true;
+      });
+      r.picks.forEach(pk => {
+        if (pk.alt || !pk.pos || u.members.indexOf(pk.id) >= 0) return;
+        if (u.members.some(i => u.pos[i] === pk.pos) || u.members.length >= 11) return;
+        u.members.push(pk.id); u.pos[pk.id] = pk.pos; delete u.alts[pk.id]; touched = true;
+      });
     });
+    if (!S.offFix1) { S.offFix1 = true; touched = true; }
     S.roster.forEach(pl => { if (pl.limited === undefined && SEED_LIMITED.indexOf(lastName(pl)) >= 0) { pl.limited = true; touched = true; } });
     S.roster.forEach(pl => {
       if (teamOf(pl) !== 'White' || (pl.num !== '' && pl.num != null)) return;
