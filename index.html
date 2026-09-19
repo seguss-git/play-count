@@ -284,8 +284,12 @@
           <h2>Opponent roster</h2>
           <p class="muted small" style="margin:0 0 6px">Type or paste their jersey numbers from the min play sheet. Names are optional. For example <code>2, 5, 7 Smith, 11</code>, or one per line.</p>
           <textarea id="oppText" rows="4" placeholder="2, 5, 7, 11, 23"></textarea>
-          <div id="oppCurrent" class="muted small" style="margin-top:6px"></div>
           <div class="row" style="margin-top:8px"><button class="btn primary grow" id="oppLoadBtn">Add players</button><button class="btn" id="oppSetupDone">Done</button></div>
+          <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
+            <span class="muted small" id="oppCurrentHead"></span>
+            <button class="btn small danger" id="oppClearTeamBtn">Clear team</button>
+          </div>
+          <div id="oppCurrent"></div>
         </div>
         <div class="empty" id="oppEmpty" style="display:none">No opponent roster yet. Whoever counts the opponent loads their numbers.</div>
         <div id="oppCountArea">
@@ -591,7 +595,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.3';
+  const APP_VERSION = '2026.09.19.4';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -707,11 +711,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     'HAMMER, Roberto'
   ].join('\n');
 
-  // The offensive units. Leuffer is the alternate at X on Lightning.
+  // The offensive units. A second name after a slash is the alternate at that spot.
   var SEED_OFFENSE = [
     'UNIT, X, LT, LG, C, RG, RT, H/Y, Z, QB, FB, UB',
     'THUNDER, Chernichaw, Thistle, Stever, Love, Pewarski, McAnany, Pezley, Seguss, Sokolik, Boyle, Turowski',
-    'LIGHTNING, Roberto, Stever, Bongiorno, Trotta, Love, Turowski, Kumar, Farnum, Pezley, Pewarski, McAnany',
+    'LIGHTNING, Roberto/Leuffer, Stever, Bongiorno, Trotta, Love, Turowski, Kumar, Farnum, Pezley, Pewarski, McAnany',
     'STORM, Murphy, Kumar, Thistle, Love, Bongiorno, Pezley, Mohamed, Derrico, Sokolik, Turowski, McAnany'
   ];
 
@@ -759,7 +763,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       pl.team = mv.team; touched = true;
       S.lineup = S.lineup.filter(i => i !== pl.id);
       S.events.forEach(e => { if (e.type === 'game' && eventTeam(e) !== mv.team) e.present = e.present.filter(i => i !== pl.id); });
-      S.units.forEach(u => { u.members = u.members.filter(i => i !== pl.id); if (u.pos) delete u.pos[pl.id]; });
+      S.units.forEach(u => { u.members = u.members.filter(i => i !== pl.id); if (u.pos) delete u.pos[pl.id]; if (u.alts) delete u.alts[pl.id]; });
     });
     S.units.forEach(u => {
       const fixed = UNIT_FIXES[String(u.name || '').trim().toUpperCase()];
@@ -776,6 +780,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       return !S.units.some(u => (u.team || 'White') === 'White' && String(u.name).trim().toUpperCase() === n);
     });
     if (newOff.length) { importChartText([SEED_OFFENSE[0]].concat(newOff).join('\n'), 'White'); touched = true; }
+    // Alternates arrived after the units did. A unit that has never had any gets the seeded ones, once.
+    parseChart(SEED_OFFENSE.join('\n'), 'White').rows.forEach(r => {
+      const u = unitsFor('White').find(x => String(x.name).trim().toUpperCase() === r.name);
+      if (!u || u.alts) return;
+      u.alts = {};
+      r.picks.forEach(pk => { if (pk.alt && pk.pos && u.members.indexOf(pk.id) < 0) u.alts[pk.id] = pk.pos; });
+      touched = true;
+    });
     S.roster.forEach(pl => { if (pl.limited === undefined && SEED_LIMITED.indexOf(lastName(pl)) >= 0) { pl.limited = true; touched = true; } });
     S.roster.forEach(pl => {
       if (teamOf(pl) !== 'White' || (pl.num !== '' && pl.num != null)) return;
@@ -1229,24 +1241,51 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       return '<div' + (r.nq ? ' style="opacity:.6"' : '') + '><b>' + (r.nq ? 'no count' : '#' + idx) + '</b> · ' + r.players.map(id => esc(oppLabel(byId[id]))).join(', ') + '</div>';
     }).reverse().join('') : '<div class="muted">No plays yet.</div>';
   }
+  // Taking a player off also takes him out of any plays already recorded, so the counts stay honest.
+  function dropOppPlayers(g, ids) {
+    g.oppRoster = (g.oppRoster || []).filter(x => ids.indexOf(x.id) < 0);
+    S.oppLineup = (S.oppLineup || []).filter(id => ids.indexOf(id) < 0);
+    sideRows(g, 'opp').forEach(r => {
+      const left = r.players.filter(id => ids.indexOf(id) < 0);
+      if (left.length === r.players.length) return;
+      r.players = left; if (!left.length) r.del = true;
+      pushPlay(g, r);
+    });
+    syncPlaysView(g); pushOpp(g); save(); renderOpp(g);
+  }
   function renderOppSetup(g) {
     const counts = oppCounts(g);
     const ros = oppList(g);
     const box = $('#oppCurrent');
-    box.innerHTML = ros.length ? ros.length + ' players: ' : 'Nobody yet.';
-    ros.forEach(p => {
-      const b = document.createElement('button');
-      b.className = 'btn small'; b.style.margin = '2px';
-      b.textContent = oppLabel(p) + (p.name && numStr(p) ? ' ' + p.name : '') + (counts[p.id] ? '' : ' ✕');
-      b.onclick = () => {
-        if (counts[p.id]) { toast(oppLabel(p) + ' already has plays, so he stays'); return; }
-        g.oppRoster = (g.oppRoster || []).filter(x => x.id !== p.id);
-        S.oppLineup = S.oppLineup.filter(id => id !== p.id);
-        pushOpp(g); save(); renderOpp(g);
-      };
-      box.appendChild(b);
-    });
+    $('#oppCurrentHead').textContent = ros.length ? ros.length + ' on their roster. Fix a number or name right here.' : 'Nobody yet.';
+    $('#oppClearTeamBtn').style.display = ros.length ? '' : 'none';
     $('#oppSetupDone').style.display = ros.length ? '' : 'none';
+    if (box.contains(document.activeElement)) return;   // someone is typing in a row
+    box.innerHTML = '';
+    ros.forEach(p => {
+      const row = document.createElement('div'); row.className = 'rrow';
+      row.innerHTML =
+        '<input class="n" type="number" inputmode="numeric" value="' + esc(numStr(p)) + '" placeholder="#">' +
+        '<input class="grow nm" value="' + esc(p.name || '') + '" placeholder="Name (optional)">' +
+        '<span class="muted small" style="min-width:34px;text-align:right">' + (counts[p.id] ? counts[p.id] + ' pl' : '') + '</span>' +
+        '<button class="btn small danger del">✕</button>';
+      row.querySelector('.n').onchange = (e) => {
+        const v = e.target.value === '' ? '' : Number(e.target.value);
+        if (v !== '' && g.oppRoster.some(x => x.id !== p.id && x.num !== '' && Number(x.num) === v)) { toast('#' + v + ' is already on their roster'); e.target.value = numStr(p); return; }
+        if (v === '' && !p.name) { toast('He needs a number or a name'); e.target.value = numStr(p); return; }
+        p.num = v; pushOpp(g); save(); e.target.blur(); renderOpp(g);
+      };
+      row.querySelector('.nm').onchange = (e) => {
+        const v = e.target.value.trim();
+        if (!v && numStr(p) === '') { toast('He needs a number or a name'); e.target.value = p.name || ''; return; }
+        p.name = v; pushOpp(g); save(); e.target.blur(); renderOpp(g);
+      };
+      row.querySelector('.del').onclick = () => {
+        if (!counts[p.id]) { dropOppPlayers(g, [p.id]); return; }
+        ask('Remove ' + oppLabel(p) + '? He is in ' + counts[p.id] + ' recorded play' + (counts[p.id] === 1 ? '' : 's') + ' and comes out of them too.', () => dropOppPlayers(g, [p.id]));
+      };
+      box.appendChild(row);
+    });
   }
   function addOppPlayers(g) {
     const rows = parseOppText($('#oppText').value);
@@ -1454,7 +1493,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function positionsOf(id) {
     const out = [];
     myUnits().forEach(u => {
-      const q = u.pos && u.pos[id];
+      const q = (u.pos && u.pos[id]) || (u.alts && u.alts[id]);
       if (q && out.indexOf(q) < 0) out.push(q);
     });
     return out;
@@ -1466,21 +1505,24 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const grp = posGroup(pos);
     const list = [];
     const interior = fitKind(pos) === 'interior';
+    const au = S.units.find(u => u.id === S.activeUnitId);
     presentRoster(g).forEach(p => {
       if (onField.indexOf(p.id) >= 0) return;
       if (p.limited && pos && !limitedOk(pos)) return;   // rule 8.1: limited players only at DG/DT/OG/OT/C
       const ps = positionsOf(p.id);
       let tier = 3, why = 'not on the chart';
-      if (pos && ps.indexOf(pos) >= 0) { tier = 0; why = 'plays ' + pos; }
+      const alt = !!(pos && au && au.alts && au.alts[p.id] === pos);
+      if (alt) { tier = 0; why = 'alternate at ' + pos + ' on ' + au.name; }
+      else if (pos && ps.indexOf(pos) >= 0) { tier = 0; why = 'plays ' + pos; }
       else if (pos && mir !== pos && ps.indexOf(mir) >= 0) { tier = 1; why = 'plays ' + mir; }
       else if (pos && ps.some(x => posGroup(x) === grp)) { tier = 2; why = ps.join(', '); }
       else if (ps.length) { why = ps.join(', '); }
-      list.push({ p: p, tier: tier, why: why, plays: counts[p.id], fit: fitScore(p, pos) });
+      list.push({ p: p, alt: alt, tier: tier, why: why, plays: counts[p.id], fit: fitScore(p, pos) });
     });
     const byFit = (a, b) => (b.fit === null ? -1 : a.fit === null ? 1 : b.fit - a.fit);
     if (S.subSort === 'fit') return list.sort((a, b) => byFit(a, b) || a.plays - b.plays);
     if (S.subSort === 'plays') return list.sort((a, b) => a.plays - b.plays || byFit(a, b));
-    return list.sort((a, b) => a.tier - b.tier || byFit(a, b) || a.plays - b.plays);
+    return list.sort((a, b) => (b.alt - a.alt) || a.tier - b.tier || byFit(a, b) || a.plays - b.plays);
   }
   let subOutId = null, subFillPos = null;
   function openSub(id) {
@@ -1701,8 +1743,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const row = document.createElement('div'); row.className = 'rrow';
       const who = u.members.map(id => player(id)).filter(Boolean);
       const sd = unitSide(u);
+      const alts = Object.keys(u.alts || {}).filter(id => player(id));
       row.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span>' + (sd ? ' <span class="tag">' + (sd === 'off' ? 'Offense' : 'Defense') + '</span>' : '') + '<br><span class="muted small">' +
-        (who.length ? esc(who.map(p => ((u.pos && u.pos[p.id]) ? u.pos[p.id] + ' ' : '') + p.name.split(/\s+/).slice(-1)[0]).join(', ')) : 'nobody yet') + '</span></span>' +
+        (who.length ? esc(who.map(p => ((u.pos && u.pos[p.id]) ? u.pos[p.id] + ' ' : '') + p.name.split(/\s+/).slice(-1)[0]).join(', ')) : 'nobody yet') +
+        (alts.length ? esc(' · Alternates: ' + alts.map(id => u.alts[id] + ' ' + lastName(player(id))).join(', ')) : '') + '</span></span>' +
         '<button class="btn small edit">Edit</button><button class="btn small danger del">✕</button>';
       row.querySelector('.edit').onclick = () => openUnitEditor(u.id, null);
       row.querySelector('.del').onclick = () => ask('Delete the ' + u.name + ' unit? Play counts are not affected.', () => {
@@ -1716,7 +1760,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function openUnitEditor(id, preset, team) {
     const u = id ? S.units.find(x => x.id === id) : null;
     draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice(),
-      pos: (u && u.pos) ? Object.assign({}, u.pos) : spotsFor(preset || []) };
+      pos: (u && u.pos) ? Object.assign({}, u.pos) : spotsFor(preset || []),
+      alts: Object.assign({}, (u && u.alts) || {}) };   // alternates: not sent out with the unit, first in line for the spot
     draft.side = unitSide(u || { pos: draft.pos }) || S.lastUnitSide || 'def';
     draft.team = u ? (u.team || 'White') : (team || S.team);
     $('#unitDlgTitle').textContent = u ? 'Edit unit' : 'New unit';
@@ -1727,7 +1772,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function renderUnitDraft() {
     if (!draft) return;
-    $('#unitCount').textContent = draft.members.length + ' selected';
+    const nAlt = Object.keys(draft.alts).filter(id => draft.members.indexOf(id) < 0).length;
+    $('#unitCount').textContent = draft.members.length + ' selected' + (nAlt ? ', ' + nAlt + ' alternate' + (nAlt === 1 ? '' : 's') : '');
     document.querySelectorAll('#unitSideSeg button').forEach(b => b.classList.toggle('active', b.dataset.side === draft.side));
     const heldBy = {};
     draft.members.forEach(id => { if (draft.pos[id]) heldBy[draft.pos[id]] = lastName(player(id)); });
@@ -1736,25 +1782,30 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!teamRoster(draft.team).length) { box.innerHTML = '<div class="empty">Add ' + draft.team + ' players on the Roster tab first.</div>'; return; }
     sortRoster(teamRoster(draft.team)).forEach(p => {
       const inU = draft.members.includes(p.id);
+      const isAlt = !inU && (p.id in draft.alts);
+      const held = isAlt ? draft.alts : draft.pos;
       const r = document.createElement('div');
       r.className = 'arow' + (inU ? ' here' : '');
-      r.innerHTML = '<span class="chk">' + (inU ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + '</span>' +
-        (inU ? posSelect(choices, draft.pos[p.id] || '', heldBy) : '');
+      r.innerHTML = '<span class="chk">' + (inU ? '✓' : '') + '</span><span class="pn">' + esc(numStr(p)) + '</span><span class="grow">' + esc(p.name) + (isAlt ? ' <span class="tag">Alt</span>' : '') + '</span>' +
+        (inU || isAlt ? posSelect(choices, held[p.id] || '', heldBy) : '<button class="btn small altbtn">Alt</button>');
       r.onclick = () => {
         if (inU) { draft.members = draft.members.filter(i => i !== p.id); delete draft.pos[p.id]; }
+        else if (isAlt) delete draft.alts[p.id];
         else draft.members.push(p.id);
         renderUnitDraft();
       };
+      const ab = r.querySelector('.altbtn');
+      if (ab) ab.onclick = (e) => { e.stopPropagation(); draft.alts[p.id] = ''; renderUnitDraft(); };
       const pi = r.querySelector('.possel');
       if (pi) {
         pi.onclick = (e) => e.stopPropagation();
         pi.onchange = (e) => {
           let v = e.target.value;
           if (v === '__other') {
-            const t = window.prompt('Position (for example SPUR or L-SB):', draft.pos[p.id] || '');
-            v = t === null ? (draft.pos[p.id] || '') : t.trim().toUpperCase().slice(0, 8);
+            const t = window.prompt('Position (for example SPUR or L-SB):', held[p.id] || '');
+            v = t === null ? (held[p.id] || '') : t.trim().toUpperCase().slice(0, 8);
           }
-          if (v) draft.pos[p.id] = v; else delete draft.pos[p.id];
+          if (v || isAlt) held[p.id] = v; else delete held[p.id];
           renderUnitDraft();
         };
       }
@@ -1813,12 +1864,16 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const row = byName[name];
       body.forEach((c, i) => {
         if (!c) return;
-        const p = matchPlayer(c, team);
-        if (!p) { problems.push(name + ' "' + c + '"'); return; }
-        const pos = (positions[i] || '').toUpperCase();
-        const seen = row.picks.filter(x => x.id === p.id)[0];
-        if (seen) { if (!seen.pos && pos) seen.pos = pos; }
-        else row.picks.push({ id: p.id, pos: pos, r: Math.max(band, 0), c: i });
+        // "Roberto/Leuffer" is a starter and his alternate.
+        c.split('/').map(x => x.trim()).filter(Boolean).forEach((nm, k) => {
+          const p = matchPlayer(nm, team);
+          if (!p) { problems.push(name + ' "' + nm + '"'); return; }
+          const pos = (positions[i] || '').toUpperCase();
+          const seen = row.picks.filter(x => x.id === p.id)[0];
+          if (seen) { if (!seen.pos && pos) seen.pos = pos; }
+          else if (k) row.picks.push({ id: p.id, pos: pos, alt: true });
+          else row.picks.push({ id: p.id, pos: pos, r: Math.max(band, 0), c: i });
+        });
       });
     });
     return { rows: order.map(n => byName[n]).filter(r => r.picks.length), problems: problems };
@@ -1904,7 +1959,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     box.innerHTML = res.rows.map(r => {
       const known = unitsFor(S.rosterTeam).some(u => u.name.toLowerCase() === r.name.toLowerCase());
       return '<div style="margin-bottom:6px"><b>' + esc(r.name) + '</b> <span class="muted">' + r.picks.length + (known ? ', updates existing' : ', new') + '</span><br>' +
-        '<span class="muted">' + esc(r.picks.map(pk => (pk.pos ? pk.pos + ' ' : '') + lastName(player(pk.id))).join(', ')) + '</span></div>';
+        '<span class="muted">' + esc(r.picks.map(pk => (pk.pos ? pk.pos + ' ' : '') + lastName(player(pk.id)) + (pk.alt ? ' (alt)' : '')).join(', ')) + '</span></div>';
     }).join('') + (res.problems.length ? '<div style="color:var(--red)">No roster match: ' + esc(res.problems.join(', ')) + '</div>' : '');
   }
   function applyChart() {
@@ -1922,6 +1977,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       if (!u.pos) u.pos = {};
       if (!u.layout) u.layout = {};
       r.picks.forEach(pk => {
+        if (pk.alt) { if (u.members.indexOf(pk.id) < 0 && pk.pos) { if (!u.alts) u.alts = {}; u.alts[pk.id] = pk.pos; } return; }
+        if (u.alts) delete u.alts[pk.id];
         if (u.members.indexOf(pk.id) < 0) u.members.push(pk.id);
         if (pk.pos) u.pos[pk.id] = pk.pos;
         if (typeof pk.r === 'number') u.layout[pk.id] = { r: pk.r, c: pk.c };
@@ -2241,7 +2298,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       row.querySelector('.del').onclick = () => ask('Remove ' + p.name + ' from the roster? Their past plays and attendance are dropped from the reports.', () => {
         S.roster = S.roster.filter(x => x.id !== p.id); S.lineup = S.lineup.filter(i => i !== p.id);
         S.events.forEach(e => e.present = e.present.filter(i => i !== p.id));
-        S.units.forEach(u => u.members = u.members.filter(i => i !== p.id));
+        S.units.forEach(u => { u.members = u.members.filter(i => i !== p.id); if (u.alts) delete u.alts[p.id]; });
         save(); render();
       });
       list.appendChild(row);
@@ -2337,10 +2394,17 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     S.lineup = u.members.filter(pid => g.present.includes(pid));
     S.activeUnitId = u.id; resetSpots();
     S.openSpots = u.members.filter(pid => !g.present.includes(pid) && u.pos && u.pos[pid]).map(pid => u.pos[pid]);
+    // An absent starter's alternate takes his spot.
+    const altIn = [];
+    Object.keys(u.alts || {}).forEach(pid => {
+      const i = S.openSpots.indexOf(u.alts[pid]);
+      if (i < 0 || !g.present.includes(pid) || S.lineup.indexOf(pid) >= 0) return;
+      S.lineup.push(pid); S.spots[pid] = u.alts[pid]; S.openSpots.splice(i, 1); altIn.push(lastName(player(pid)));
+    });
     save(); renderHeader(); renderGame();
     if (navigator.vibrate) navigator.vibrate(20);
-    const out = u.members.length - S.lineup.length;
-    toast(u.name + ': ' + S.lineup.length + ' on field' + (out ? ', ' + out + ' absent' : ''));
+    const out = u.members.length - S.lineup.length + altIn.length;
+    toast(u.name + ': ' + S.lineup.length + ' on field' + (out ? ', ' + out + ' absent' : '') + (altIn.length ? ', ' + altIn.join(' and ') + ' in as alternate' : ''));
   }
   function setTeam(t) {
     if (S.team === t) return;
@@ -2825,6 +2889,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   const oppAct = (fn) => () => { const g = curGame(); if (!g) return; if (!canCount(g, 'opp')) return watchingToast(g, 'opp'); fn(g); };
   $('#oppLoadBtn').onclick = oppAct(addOppPlayers);
   $('#oppSetupDone').onclick = () => { oppEditing = null; renderGame(); };
+  $('#oppClearTeamBtn').onclick = oppAct(g => {
+    const n = sideRows(g, 'opp').length;
+    ask('Clear the whole opponent roster?' + (n ? ' The ' + n + ' opponent play' + (n === 1 ? '' : 's') + ' recorded so far ' + (n === 1 ? 'is' : 'are') + ' wiped too.' : ''), () => {
+      oppEditing = g.id;
+      dropOppPlayers(g, (g.oppRoster || []).map(x => x.id));
+      toast('Opponent roster cleared');
+    });
+  });
   $('#oppEditBtn').onclick = oppAct(g => { oppEditing = g.id; renderGame(); });
   $('#oppRecordBtn').onclick = oppAct(g => {
     if (!S.oppLineup.length) return;
@@ -2991,8 +3063,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!draft) return;
     const name = $('#unitName').value.trim();
     if (!name) { $('#unitName').focus(); return toast('Give the unit a name'); }
-    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); u.side = draft.side; }
-    else S.units.push({ id: uid(), name: name, team: draft.team, side: draft.side, members: draft.members.slice(), pos: Object.assign({}, draft.pos) });
+    const alts = {};
+    Object.keys(draft.alts).forEach(id => { if (draft.alts[id] && draft.members.indexOf(id) < 0) alts[id] = draft.alts[id]; });
+    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); u.alts = alts; u.side = draft.side; }
+    else S.units.push({ id: uid(), name: name, team: draft.team, side: draft.side, members: draft.members.slice(), pos: Object.assign({}, draft.pos), alts: alts });
     S.lastUnitSide = draft.side;
     $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
   };
