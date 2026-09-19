@@ -254,6 +254,11 @@
       </div>
       <p class="muted small hint ctl" id="modeHint"></p>
       <div class="muted small wonly" id="watchLine" style="margin:0 0 8px"></div>
+      <div class="wonly" id="watchViewRow" style="text-align:right;margin-bottom:6px"><button class="btn small" id="watchFieldToggle">Field view</button></div>
+      <div id="watchField" class="wonly" style="display:none">
+        <div class="fieldwrap" id="watchFieldBox"></div>
+        <p class="muted small" id="watchFieldNote" style="margin:0 0 8px"></p>
+      </div>
       <div class="units ctl" id="unitRow"></div>
       <div class="row ctl" id="viewRow" style="justify-content:flex-end;margin-bottom:6px"><button class="btn small" id="saveUnitBtn">Save to unit</button><button class="btn small" id="fieldToggle">Field view</button></div>
       <div id="fieldView" class="ctl" style="display:none">
@@ -604,7 +609,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.15';
+  const APP_VERSION = '2026.09.19.17';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -904,11 +909,17 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       }
       const old = localStorage.getItem(OLD_KEY);
       if (old) return migrate(JSON.parse(old));
-    } catch (e) { console.warn('load failed', e); }
+    } catch (e) {
+      console.warn('load failed', e);
+      // Never let a fresh start overwrite data that would not load: keep a copy that Settings can restore from.
+      try { const raw = localStorage.getItem(KEY); if (raw && raw.length > 2) localStorage.setItem(KEY + '.unreadable', raw); } catch (e2) { /* storage full */ }
+    }
     const fresh = defaults(); fresh.deviceId = uid() + uid(); return fresh;
   }
   // Plays for both teams share one list of rows; side says whose play it was.
-  const sideOf = (r) => r.side || 'us';
+  // A plain function on purpose: load() above runs before any const on this page exists, and a const here
+  // made every reload of a game with plays throw, which wiped the phone back to a fresh install.
+  function sideOf(r) { return r.side || 'us'; }
   function sideRows(e, sd) { return (e.rows || []).filter(r => !r.del && sideOf(r) === sd); }
   function syncPlaysView(e) {
     const us = sideRows(e, 'us'), op = sideRows(e, 'opp');
@@ -1085,8 +1096,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       grid.appendChild(b);
     });
     const useField = !tap && S.fieldView && !watchUs;
+    const watchField = watchUs && !!S.watchField;
     $('#fieldView').style.display = useField ? '' : 'none';
-    $('#playerGrid').style.display = useField ? 'none' : '';
+    $('#watchField').style.display = watchField ? '' : 'none';
+    $('#watchFieldToggle').textContent = watchField ? 'List view' : 'Field view';
+    if (watchField) renderWatchField(g, counts, liveUs);
+    $('#playerGrid').style.display = useField || watchField ? 'none' : '';
     $('#viewRow').style.display = tap ? 'none' : '';
     $('#fieldToggle').textContent = useField ? 'List view' : 'Field view';
     $('#saveUnitBtn').style.display = lineupIds().length ? '' : 'none';
@@ -1469,6 +1484,39 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       add({ id: null, pos: pos, dy: geo ? geo.dy : 0, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 });
     });
     return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c));
+  }
+  // For a phone that is watching: the players from the last recorded play, stood where the depth chart
+  // puts them. The counting phone's own substitutions by spot are not shared, so the chart supplies positions.
+  function renderWatchField(g, counts, live) {
+    const box = $('#watchFieldBox'), note = $('#watchFieldNote');
+    box.innerHTML = '<span class="los">LINE OF SCRIMMAGE</span>';
+    const last = live[live.length - 1];
+    if (!last) { box.innerHTML += '<div class="empty" style="color:rgba(255,255,255,.8)">No plays yet. The field fills in with the first play recorded.</div>'; note.textContent = ''; return; }
+    const ids = last.players.filter(id => player(id));
+    const spotIn = (u, id) => (u.pos && u.pos[id]) || (u.alts && u.alts[id]) || '';
+    let best = null, most = 0;
+    myUnits().forEach(u => { const n = ids.filter(id => spotIn(u, id)).length; if (n > most) { most = n; best = u; } });
+    if (most * 2 < ids.length) best = null;
+    const rows = {}, taken = {};
+    ids.forEach(id => {
+      let pos = best ? spotIn(best, id) : '';
+      if (pos && taken[pos]) pos = '';          // two kids on the same charted spot: the second shows without one
+      if (pos) taken[pos] = 1;
+      const geo = posSpot(pos);
+      (rows[geo ? geo.r : 9] = rows[geo ? geo.r : 9] || []).push({ id: id, pos: pos, dy: geo ? geo.dy : 0, r: geo ? geo.r : 9,
+        x: geo ? geo.x : null, c: geo ? geo.x : 100 + (lastName(player(id)) || '').charCodeAt(0) });
+    });
+    drawFieldRows(box, Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c)), (spot, b) => {
+      const p = player(spot.id);
+      b.className = 'fspot on ' + level(counts[p.id]);
+      b.style.pointerEvents = 'none';
+      b.innerHTML = '<span class="dot">' + esc(numStr(p) || String(counts[p.id])) + '</span>' +
+        (spot.pos ? '<span class="ps">' + esc(spot.pos) + '</span>' : '') +
+        '<span class="pl">' + esc(lastName(p)) + ' · ' + counts[p.id] + '</span>';
+    });
+    const n = live.filter(r => !r.nq).length;
+    note.textContent = 'On the field for the last play recorded' + (last.nq ? ' (a no-count play)' : ' (play ' + n + ')') +
+      (last.t ? ', ' + agoText(last.t) : '') + (best ? ' · looks like ' + best.name : '') + '. Name and plays so far under each spot.';
   }
   function renderField(g, counts) {
     const box = $('#fieldBox');
@@ -3031,7 +3079,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   // A view-only phone can look at everything and change nothing. Whatever is not on this list is stopped
   // before its handler runs; the database would refuse the write anyway.
-  const VIEW_OK = 'nav, .seg, .open, #syncCard, #fieldToggle, #unitFieldToggle, #focusBtn, #endGameBtn, #oppCopyBtn, #copyBtn, #shareBtn, #csvBtn, #sheet72Btn, ' +
+  const VIEW_OK = 'nav, .seg, .open, #syncCard, #fieldToggle, #unitFieldToggle, #watchFieldToggle, #focusBtn, #endGameBtn, #oppCopyBtn, #copyBtn, #shareBtn, #csvBtn, #sheet72Btn, ' +
     '#copySheetBtn, #attendDoneBtn, #seasonCopyBtn, #exportBtn, #checkUpdBtn, #copyDlg, #updateBar, #eventList .rrow, #fitCard';
   function viewBlocked(t) {
     if (!viewer() || !t || !t.closest) return false;
@@ -3151,6 +3199,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   });
   $('#subCancel').onclick = () => $('#subDlg').close();
   $('#subOff').onclick = () => { const id = subOutId; $('#subDlg').close(); if (id) toggle(id); };
+  $('#watchFieldToggle').onclick = () => { S.watchField = !S.watchField; save(); renderGame(); };
   $('#fieldToggle').onclick = () => { S.fieldView = !S.fieldView; save(); renderGame(); };
   $('#focusBtn').onclick = () => { S.focus = !S.focus; save(); renderGame(); };
   $('#pushBtn').onclick = pushAttendance;
