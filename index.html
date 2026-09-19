@@ -416,7 +416,8 @@
     </div>
     <p class="muted small hint" id="rosterNote"></p>
     <div class="card" id="unitsCard">
-      <h2><span id="unitsHead">Units</span> <span class="muted plain">(Hawk, Viper, and so on)</span></h2>
+      <div class="seg" id="unitListSeg" style="margin:0 0 10px"><button data-side="def">Defense</button><button data-side="off">Offense</button></div>
+      <h2><span id="unitsHead">Units</span> <span class="muted plain" id="unitsEg"></span></h2>
       <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
       <div id="unitList" class="ulist"></div>
       <div class="row wrap" style="margin-top:10px">
@@ -598,7 +599,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.7';
+  const APP_VERSION = '2026.09.19.8';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1764,9 +1765,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const list = $('#unitList');
     const team = S.rosterTeam || S.team;
     $('#unitsHead').textContent = team + ' units';
-    if (!unitsFor(team).length) { list.innerHTML = '<div class="empty">No ' + team + ' units yet. Build one here' + (team === S.team ? ', or tap the players on the field and use the + button on the Game tab' : '') + '.</div>'; return; }
+    // Defense or offense, one at a time. A unit with no side yet (an empty one) shows under both.
+    const side = S.unitListSide === 'off' ? 'off' : 'def';
+    document.querySelectorAll('#unitListSeg button').forEach(b => b.classList.toggle('active', b.dataset.side === side));
+    $('#unitsHead').textContent = team + (side === 'off' ? ' offense units' : ' defense units');
+    $('#unitsEg').textContent = side === 'off' ? '(Thunder, Lightning, and so on)' : '(Hawk, Viper, and so on)';
+    const shown = unitsFor(team).filter(u => !unitSide(u) || unitSide(u) === side);
+    if (!shown.length) { list.innerHTML = '<div class="empty">No ' + team + (side === 'off' ? ' offense' : ' defense') + ' units yet. Build one here' + (team === S.team ? ', or tap the players on the field and use the + button on the Game tab' : '') + '.</div>'; return; }
     list.innerHTML = '';
-    unitsFor(team).forEach(u => {
+    shown.forEach(u => {
       const row = document.createElement('div'); row.className = 'rrow';
       const who = u.members.map(id => player(id)).filter(Boolean);
       const sd = unitSide(u);
@@ -1789,7 +1796,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     draft = { id: u ? u.id : null, name: u ? u.name : '', members: u ? u.members.slice() : (preset || []).slice(),
       pos: (u && u.pos) ? Object.assign({}, u.pos) : spotsFor(preset || []),
       alts: Object.assign({}, (u && u.alts) || {}) };   // alternates: not sent out with the unit, first in line for the spot
-    draft.side = unitSide(u || { pos: draft.pos }) || S.lastUnitSide || 'def';
+    draft.side = unitSide(u || { pos: draft.pos }) || (team ? S.unitListSide : '') || S.lastUnitSide || 'def';
     draft.team = u ? (u.team || 'White') : (team || S.team);
     $('#unitDlgTitle').textContent = u ? 'Edit unit' : 'New unit';
     $('#unitName').value = draft.name;
@@ -3137,6 +3144,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#loadTeamBtn').onclick = loadTeamRoster;
   $('#fitPos').onchange = renderFitBoard;
   document.querySelectorAll('#fitSideSeg button').forEach(b => b.onclick = () => { S.fitSide = b.dataset.side; save(); renderFitBoard(); });
+  document.querySelectorAll('#unitListSeg button').forEach(b => b.onclick = () => { S.unitListSide = b.dataset.side; save(); renderUnitList(); });
   $('#newUnitBtn').onclick = () => openUnitEditor(null, S.rosterTeam === S.team ? lineupIds() : [], S.rosterTeam);
   $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('chart'); $('#chartDlg').showModal(); };
   $('#rosterScanBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('roster'); $('#chartDlg').showModal(); };
@@ -3161,7 +3169,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     Object.keys(draft.alts).forEach(id => { if (draft.alts[id] && draft.members.indexOf(id) < 0) alts[id] = draft.alts[id]; });
     if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); u.alts = alts; u.side = draft.side; }
     else S.units.push({ id: uid(), name: name, team: draft.team, side: draft.side, members: draft.members.slice(), pos: Object.assign({}, draft.pos), alts: alts });
-    S.lastUnitSide = draft.side;
+    S.lastUnitSide = draft.side; S.unitListSide = draft.side;   // the list follows the unit just saved
     $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
   };
 
