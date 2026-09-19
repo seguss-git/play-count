@@ -604,7 +604,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.14';
+  const APP_VERSION = '2026.09.19.15';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1353,10 +1353,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (m) { side = m[1] === 'L' ? -1 : 1; q = m[2]; }
     else if (/^[LR](T|G)$/.test(q)) { side = q[0] === 'L' ? -1 : 1; q = q.slice(1); }
     const at = (r, d) => ({ r: r, x: side * d });
-    // Our offense: X split left on the line, H/Y outside the right tackle, Z on the line outside him,
+    // Our offense: X split left on the line, H/Y outside the right tackle and a step off the line (dy),
+    // Z on the line outside him,
     // QB under centre with the upback then the fullback behind him.
     if (q === 'X') return { r: 0, x: -5 };
-    if (q === 'H/Y' || q === 'H' || q === 'Y') return { r: 0, x: 3 };
+    if (q === 'H/Y' || q === 'H' || q === 'Y') return { r: 0, x: 3, dy: 1 };
     if (q === 'Z') return { r: 0, x: 5 };
     if (q === 'UB') return { r: 2, x: 0 };
     if (q === 'FB') return { r: 3, x: 0 };
@@ -1443,10 +1444,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const pos = S.spots[id] || '';
       const geo = posSpot(pos);
       const lay = (!geo && u && u.layout && u.pos && u.pos[id] === pos) ? u.layout[id] : null;
-      add({ id: id, pos: pos, r: geo ? geo.r : (lay ? lay.r : 9), x: geo ? geo.x : null,
+      add({ id: id, pos: pos, dy: geo ? geo.dy : 0, r: geo ? geo.r : (lay ? lay.r : 9), x: geo ? geo.x : null,
         c: geo ? geo.x : (lay ? lay.c : 100 + (lastName(player(id)) || '').charCodeAt(0)) });
     });
-    (S.openSpots || []).forEach(pos => { const geo = posSpot(pos); add({ id: null, pos: pos, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 }); });
+    (S.openSpots || []).forEach(pos => { const geo = posSpot(pos); add({ id: null, pos: pos, dy: geo ? geo.dy : 0, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 }); });
     return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c));
   }
   // A unit drawn on the field for the Roster tab. An offense shows all eleven spots, filled or not.
@@ -1459,13 +1460,13 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const pos = (u.pos && u.pos[id]) || '';
       const geo = posSpot(pos), lay = (!geo && u.layout) ? u.layout[id] : null;
       if (pos) held.push(pos);
-      add({ id: id, pos: pos, r: geo ? geo.r : (lay && pos ? lay.r : 9), x: geo ? geo.x : null,
+      add({ id: id, pos: pos, dy: geo ? geo.dy : 0, r: geo ? geo.r : (lay && pos ? lay.r : 9), x: geo ? geo.x : null,
         c: geo ? geo.x : (lay && pos ? lay.c : 100 + (lastName(player(id)) || '').charCodeAt(0)) });
     });
     if (unitSide(u) === 'off') SIDE_POSITIONS.off.forEach(pos => {
       if (held.indexOf(pos) >= 0) return;
       const geo = posSpot(pos);
-      add({ id: null, pos: pos, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 });
+      add({ id: null, pos: pos, dy: geo ? geo.dy : 0, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 });
     });
     return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c));
   }
@@ -1508,6 +1509,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       row.forEach((spot, i) => {
         const b = document.createElement('button');
         if (fill(spot, b) === false) return;
+        if (spot.dy) b.style[lined ? 'top' : 'marginTop'] = '16px';   // a step off the line
         if (lined) {
           const n = cols.length, k = cols.indexOf(spot.x);
           const gapL = i ? k - cols.indexOf(row[i - 1].x) : 3, gapR = i < row.length - 1 ? cols.indexOf(row[i + 1].x) - k : 3;
