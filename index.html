@@ -106,6 +106,8 @@
   .frow.abs { display: block; position: relative; height: 72px; }
   .frow.abs.tight { height: 60px; }
   .frow.abs .fspot { position: absolute; top: 0; }
+  .fieldwrap.ufield .frow.abs { height: 86px; }   /* room for the alternate's name under a spot */
+  .fieldwrap.ufield .frow.abs.tight { height: 74px; }
   .fspot.open .dot { background: none; border-style: dashed; color: rgba(255,255,255,.8); font-size: 18px; }
   .fspot.open .pl { opacity: .7; }
   .cand { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); width: 100%;
@@ -417,7 +419,10 @@
     <p class="muted small hint" id="rosterNote"></p>
     <div class="card" id="unitsCard">
       <div class="seg" id="unitListSeg" style="margin:0 0 10px"><button data-side="def">Defense</button><button data-side="off">Offense</button></div>
-      <h2><span id="unitsHead">Units</span> <span class="muted plain" id="unitsEg"></span></h2>
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h2 style="margin:0"><span id="unitsHead">Units</span> <span class="muted plain" id="unitsEg"></span></h2>
+        <button class="btn small" id="unitFieldToggle">Field view</button>
+      </div>
       <p class="muted small" style="margin:0 0 6px">A unit is a group you send out together. On the Game tab one tap puts the whole unit on the field, and you can still sub individuals after.</p>
       <div id="unitList" class="ulist"></div>
       <div class="row wrap" style="margin-top:10px">
@@ -599,7 +604,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.8';
+  const APP_VERSION = '2026.09.19.9';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1443,6 +1448,26 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     (S.openSpots || []).forEach(pos => { const geo = posSpot(pos); add({ id: null, pos: pos, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 }); });
     return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c));
   }
+  // A unit drawn on the field for the Roster tab. An offense shows all eleven spots, filled or not.
+  function unitRows(u) {
+    const rows = {};
+    const add = (spot) => { (rows[spot.r] = rows[spot.r] || []).push(spot); };
+    const held = [];
+    u.members.forEach(id => {
+      if (!player(id)) return;
+      const pos = (u.pos && u.pos[id]) || '';
+      const geo = posSpot(pos), lay = (!geo && u.layout) ? u.layout[id] : null;
+      if (pos) held.push(pos);
+      add({ id: id, pos: pos, r: geo ? geo.r : (lay && pos ? lay.r : 9), x: geo ? geo.x : null,
+        c: geo ? geo.x : (lay && pos ? lay.c : 100 + (lastName(player(id)) || '').charCodeAt(0)) });
+    });
+    if (unitSide(u) === 'off') SIDE_POSITIONS.off.forEach(pos => {
+      if (held.indexOf(pos) >= 0) return;
+      const geo = posSpot(pos);
+      add({ id: null, pos: pos, r: geo ? geo.r : 9, x: geo ? geo.x : null, c: geo ? geo.x : 200 });
+    });
+    return Object.keys(rows).sort((a, b) => a - b).map(k => rows[k].sort((a, b) => a.c - b.c));
+  }
   function renderField(g, counts) {
     const box = $('#fieldBox');
     box.innerHTML = '<span class="los">LINE OF SCRIMMAGE</span>';
@@ -1451,7 +1476,25 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!onIds.length) {
       box.innerHTML += '<div class="empty" style="color:rgba(255,255,255,.8)">Nobody on the field. Tap a unit, or a name below.</div>';
     }
-    const rows = formationRows(onIds);
+    drawFieldRows(box, formationRows(onIds), (spot, b) => {
+      const p = spot.id ? player(spot.id) : null;
+      if (spot.id && !p) return false;
+      if (p) {
+        b.className = 'fspot on ' + level(counts[p.id]);
+        b.innerHTML = '<span class="dot">' + esc(numStr(p) || String(counts[p.id])) + '</span>' +
+          (spot.pos ? '<span class="ps">' + esc(spot.pos) + '</span>' : '') +
+          '<span class="pl">' + esc(lastName(p)) + '</span>';
+        b.onclick = () => openSub(p.id);
+      } else {
+        b.className = 'fspot open';
+        b.innerHTML = '<span class="dot">+</span><span class="ps">' + esc(spot.pos) + '</span><span class="pl">open</span>';
+        b.onclick = () => openFill(spot.pos);
+      }
+    });
+    renderBench(g, counts, onIds);
+  }
+  // Lays rows of spots out on a field. fill(spot, button) dresses each one, or returns false to leave it out.
+  function drawFieldRows(box, rows, fill) {
     // Every row shares one set of columns so a linebacker sits over the gap he plays.
     const cols = [];
     rows.forEach(row => row.forEach(s => { if (s.x !== null && cols.indexOf(s.x) < 0) cols.push(s.x); }));
@@ -1462,20 +1505,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const lined = row.every(s => s.x !== null) && row.every((s, i) => !i || s.x !== row[i - 1].x);
       div.className = 'frow' + (lined ? ' abs' : '') + (tight ? ' tight' : '');
       row.forEach((spot, i) => {
-        const p = spot.id ? player(spot.id) : null;
-        if (spot.id && !p) return;
         const b = document.createElement('button');
-        if (p) {
-          b.className = 'fspot on ' + level(counts[p.id]);
-          b.innerHTML = '<span class="dot">' + esc(numStr(p) || String(counts[p.id])) + '</span>' +
-            (spot.pos ? '<span class="ps">' + esc(spot.pos) + '</span>' : '') +
-            '<span class="pl">' + esc(lastName(p)) + '</span>';
-          b.onclick = () => openSub(p.id);
-        } else {
-          b.className = 'fspot open';
-          b.innerHTML = '<span class="dot">+</span><span class="ps">' + esc(spot.pos) + '</span><span class="pl">open</span>';
-          b.onclick = () => openFill(spot.pos);
-        }
+        if (fill(spot, b) === false) return;
         if (lined) {
           const n = cols.length, k = cols.indexOf(spot.x);
           const gapL = i ? k - cols.indexOf(row[i - 1].x) : 3, gapR = i < row.length - 1 ? cols.indexOf(row[i + 1].x) - k : 3;
@@ -1488,6 +1519,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       });
       box.appendChild(div);
     });
+  }
+  function renderBench(g, counts, onIds) {
     const bench = $('#benchBar');
     bench.innerHTML = '';
     sortRoster(presentRoster(g)).forEach(p => {
@@ -1773,6 +1806,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const shown = unitsFor(team).filter(u => !unitSide(u) || unitSide(u) === side);
     if (!shown.length) { list.innerHTML = '<div class="empty">No ' + team + (side === 'off' ? ' offense' : ' defense') + ' units yet. Build one here' + (team === S.team ? ', or tap the players on the field and use the + button on the Game tab' : '') + '.</div>'; return; }
     list.innerHTML = '';
+    $('#unitFieldToggle').textContent = S.unitFieldView ? 'List view' : 'Field view';
+    if (S.unitFieldView) { shown.forEach(u => list.appendChild(unitFieldCard(u))); return; }
     shown.forEach(u => {
       const row = document.createElement('div'); row.className = 'rrow';
       const who = u.members.map(id => player(id)).filter(Boolean);
@@ -1788,6 +1823,38 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       });
       list.appendChild(row);
     });
+  }
+
+  // One unit as a field diagram: who lines up where, the alternate under his starter, anyone without a spot below.
+  function unitFieldCard(u) {
+    const wrap = document.createElement('div'); wrap.style.marginBottom = '14px';
+    const who = u.members.filter(id => player(id)), sd = unitSide(u);
+    const head = document.createElement('div'); head.className = 'rrow'; head.style.borderBottom = '0';
+    head.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span>' +
+      (sd ? ' <span class="tag">' + (sd === 'off' ? 'Offense' : 'Defense') + '</span>' : '') + '</span><button class="btn small edit">Edit</button>';
+    head.querySelector('.edit').onclick = () => openUnitEditor(u.id, null);
+    wrap.appendChild(head);
+    const box = document.createElement('div'); box.className = 'fieldwrap ufield';
+    box.innerHTML = '<span class="los">LINE OF SCRIMMAGE</span>';
+    const altAt = {};
+    Object.keys(u.alts || {}).forEach(id => { if (player(id)) (altAt[u.alts[id]] = altAt[u.alts[id]] || []).push(lastName(player(id))); });
+    const rows = unitRows(u);
+    if (!rows.length) box.innerHTML += '<div class="empty" style="color:rgba(255,255,255,.8)">Nobody in this unit yet. Tap Edit.</div>';
+    drawFieldRows(box, rows, (spot, b) => {
+      const p = spot.id ? player(spot.id) : null;
+      const alt = spot.pos && altAt[spot.pos] ? '<span class="pl" style="color:#fde68a;font-style:italic" title="alternate">/ ' + esc(altAt[spot.pos].join(', ')) + '</span>' : '';
+      if (p) {
+        b.className = 'fspot on';
+        b.innerHTML = '<span class="dot">' + esc(numStr(p) || lastName(p).slice(0, 2)) + '</span>' +
+          '<span class="ps">' + esc(spot.pos || 'no spot') + '</span><span class="pl">' + esc(lastName(p)) + '</span>' + alt;
+      } else {
+        b.className = 'fspot open';
+        b.innerHTML = '<span class="dot">+</span><span class="ps">' + esc(spot.pos) + '</span><span class="pl">open</span>' + alt;
+      }
+      b.onclick = () => openUnitEditor(u.id, null);
+    });
+    wrap.appendChild(box);
+    return wrap;
   }
 
   let draft = null;
@@ -2949,7 +3016,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   // A view-only phone can look at everything and change nothing. Whatever is not on this list is stopped
   // before its handler runs; the database would refuse the write anyway.
-  const VIEW_OK = 'nav, .seg, .open, #syncCard, #fieldToggle, #focusBtn, #endGameBtn, #oppCopyBtn, #copyBtn, #shareBtn, #csvBtn, #sheet72Btn, ' +
+  const VIEW_OK = 'nav, .seg, .open, #syncCard, #fieldToggle, #unitFieldToggle, #focusBtn, #endGameBtn, #oppCopyBtn, #copyBtn, #shareBtn, #csvBtn, #sheet72Btn, ' +
     '#copySheetBtn, #attendDoneBtn, #seasonCopyBtn, #exportBtn, #checkUpdBtn, #copyDlg, #updateBar, #eventList .rrow, #fitCard';
   function viewBlocked(t) {
     if (!viewer() || !t || !t.closest) return false;
@@ -3145,6 +3212,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#fitPos').onchange = renderFitBoard;
   document.querySelectorAll('#fitSideSeg button').forEach(b => b.onclick = () => { S.fitSide = b.dataset.side; save(); renderFitBoard(); });
   document.querySelectorAll('#unitListSeg button').forEach(b => b.onclick = () => { S.unitListSide = b.dataset.side; save(); renderUnitList(); });
+  $('#unitFieldToggle').onclick = () => { S.unitFieldView = !S.unitFieldView; save(); renderUnitList(); };
   $('#newUnitBtn').onclick = () => openUnitEditor(null, S.rosterTeam === S.team ? lineupIds() : [], S.rosterTeam);
   $('#chartBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('chart'); $('#chartDlg').showModal(); };
   $('#rosterScanBtn').onclick = () => { $('#chartStatus').textContent = ''; setImpMode('roster'); $('#chartDlg').showModal(); };
