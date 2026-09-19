@@ -256,7 +256,7 @@
       <div class="muted small wonly" id="watchLine" style="margin:0 0 8px"></div>
       <div class="wonly" id="watchViewRow" style="text-align:right;margin-bottom:6px"><button class="btn small" id="watchFieldToggle">Field view</button></div>
       <div id="watchField" class="wonly" style="display:none">
-        <div class="fieldwrap" id="watchFieldBox"></div>
+        <div class="fieldwrap ufield" id="watchFieldBox"></div>
         <p class="muted small" id="watchFieldNote" style="margin:0 0 8px"></p>
       </div>
       <div class="units ctl" id="unitRow"></div>
@@ -609,7 +609,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.17';
+  const APP_VERSION = '2026.09.19.18';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1512,7 +1512,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       b.style.pointerEvents = 'none';
       b.innerHTML = '<span class="dot">' + esc(numStr(p) || String(counts[p.id])) + '</span>' +
         (spot.pos ? '<span class="ps">' + esc(spot.pos) + '</span>' : '') +
-        '<span class="pl">' + esc(lastName(p)) + ' · ' + counts[p.id] + '</span>';
+        '<span class="pl">' + esc(lastName(p)) + '</span><span class="pl" style="opacity:.75">' + counts[p.id] + ' pl</span>';
     });
     const n = live.filter(r => !r.nq).length;
     note.textContent = 'On the field for the last play recorded' + (last.nq ? ' (a no-count play)' : ' (play ' + n + ')') +
