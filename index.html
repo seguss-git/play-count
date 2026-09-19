@@ -381,8 +381,8 @@
         <button class="btn small" id="attendDoneBtn">Done</button>
       </div>
       <div class="seg" id="attSortSeg" style="margin:0 0 6px">
-        <button data-sort="number">Number</button>
         <button data-sort="name">Name</button>
+        <button data-sort="number">Number</button>
         <button data-sort="absent">Absent first</button>
         <span class="muted small grow" style="text-align:right" id="attendCount"></span>
       </div>
@@ -454,6 +454,16 @@
   <!-- SETTINGS VIEW -->
   <section class="view" id="view-settings">
     <div class="card">
+      <h2>Team sync</h2>
+      <p class="muted small" style="margin:0 0 6px">One shared game for every coach. Once connected, every phone sees the same counts, attendance and roster live. Works with no signal and catches up when it returns.</p>
+      <label class="field">Your name, shown to the other coaches when you are counting</label>
+      <input id="coachName" placeholder="e.g. Coach Simon" autocomplete="off" maxlength="30">
+      <label class="field" style="margin-top:8px">Database link and team code</label>
+      <input id="syncUrl" placeholder="https://xxxx-default-rtdb.firebaseio.com" autocomplete="off">
+      <input id="syncKey" placeholder="team code" autocomplete="off" style="margin-top:6px">
+      <div class="row" style="margin-top:8px"><button class="btn small" id="syncNowBtn">Sync now</button><span class="muted small grow" id="syncStatus"></span></div>
+    </div>
+    <div class="card">
       <h2>Settings</h2>
       <p class="muted small" style="margin:0 0 8px">Whichever team is picked here is the one that games, play counts and units belong to. Practice attendance always covers both teams, so a coach from either side can share this app and switch to their own.</p>
       <div class="row wrap">
@@ -479,16 +489,6 @@
       <p class="muted small">Everything is saved on this device only. Use Backup to move it to another phone.</p>
       <p class="muted small" id="verLine"></p>
       <div class="row wrap"><button class="btn small" id="checkUpdBtn">Check for update now</button><span class="muted small grow" id="updStatus"></span></div>
-    </div>
-    <div class="card">
-      <h2>Team sync</h2>
-      <p class="muted small" style="margin:0 0 6px">One shared game for every coach. Once connected, every phone sees the same counts, attendance and roster live. Works with no signal and catches up when it returns.</p>
-      <label class="field">Your name, shown to the other coaches when you are counting</label>
-      <input id="coachName" placeholder="e.g. Coach Simon" autocomplete="off" maxlength="30">
-      <label class="field" style="margin-top:8px">Database link and team code</label>
-      <input id="syncUrl" placeholder="https://xxxx-default-rtdb.firebaseio.com" autocomplete="off">
-      <input id="syncKey" placeholder="team code" autocomplete="off" style="margin-top:6px">
-      <div class="row" style="margin-top:8px"><button class="btn small" id="syncNowBtn">Sync now</button><span class="muted small grow" id="syncStatus"></span></div>
     </div>
     <div class="card">
       <h2>Head coach's sheet</h2>
@@ -591,7 +591,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.1';
+  const APP_VERSION = '2026.09.19.3';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -825,7 +825,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     subSort: 'chart',    // how the substitute list is ordered
     countSort: 'fewest', // Counts tab order: fewest, most, number, name
     attView: 'take',     // Attendance tab: 'take' or 'season'
-    attSort: 'number',   // check list order: number, name, absent
+    attSort: 'name',     // check list order: name, number, absent
+    nameSort: true,      // older installs get moved to alphabetical lists once
     seasonSort: 'lowest',
     seasonOpen: null,    // player whose missed dates are expanded
     nextNoCount: false,  // next recorded play is a punt / PAT / kneel and will not count
@@ -854,6 +855,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (st.team !== 'White' && st.team !== 'Blue') st.team = 'White';
         if (st.rosterTeam !== 'White' && st.rosterTeam !== 'Blue') st.rosterTeam = st.team;
         if (saved.minRule !== 14) { st.minPlays = 14; st.minRule = 14; }   // league rule, applied once to older installs
+        if (!saved.nameSort) { st.nameSort = true; if (st.attSort === 'number') st.attSort = 'name'; }   // lists went alphabetical, applied once
         if (!st.deviceId) st.deviceId = uid() + uid();
         st.events.forEach(e => {
           if (!e.rows) e.rows = (e.plays || []).map((pl, i) => ({ id: uid() + uid(), players: pl.slice(), dev: st.deviceId, seq: i, t: 0, del: false }));
@@ -921,7 +923,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   const unitsFor = (t) => S.units.filter(u => (u.team || 'White') === t);
   const poolFor = (e) => (!e || e.type === 'practice') ? S.roster : teamRoster(eventTeam(e));
   const num = (p) => (p.num === '' || p.num == null) ? 999 : Number(p.num);
-  const sortRoster = (arr) => arr.slice().sort((a, b) => (num(a) - num(b)) || a.name.localeCompare(b.name));
+  // Lists run alphabetically by last name. Jersey number is still a choice on Counts and Attendance.
+  const byLast = (a, b) => lastName(a).localeCompare(lastName(b)) || a.name.localeCompare(b.name);
+  const sortRoster = (arr) => arr.slice().sort(byLast);
   const presentRoster = (e) => sortRoster(S.roster.filter(p => e.present.includes(p.id)));
 
   function countsFor(e) {
@@ -1054,7 +1058,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     document.body.classList.toggle('focus', !!S.focus);
     $('#focusBtn').textContent = S.focus ? 'Show all' : 'Focus';
     const offField = presentRoster(g).filter(p => S.lineup.indexOf(p.id) < 0)
-      .sort((a, b) => counts[a.id] - counts[b.id] || num(a) - num(b)).slice(0, 3);
+      .sort((a, b) => counts[a.id] - counts[b.id] || byLast(a, b)).slice(0, 3);
     const under = presentRoster(g).filter(p => counts[p.id] < activeMin).length;
     const recentDevs = {};
     liveUs.forEach(r => { if (r.t && Date.now() - r.t < 90000) recentDevs[r.dev || '?'] = 1; });
@@ -1987,12 +1991,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const counts = countsFor(g);
     const ros = presentRoster(g);
     document.querySelectorAll('#countSeg button').forEach(b => b.classList.toggle('active', b.dataset.sort === S.countSort));
-    const byName = (a, b) => lastName(a).localeCompare(lastName(b)) || a.name.localeCompare(b.name);
+    const byName = byLast;
     const sorted = ros.slice().sort((a, b) => {
-      if (S.countSort === 'most') return counts[b.id] - counts[a.id] || num(a) - num(b);
+      if (S.countSort === 'most') return counts[b.id] - counts[a.id] || byName(a, b);
       if (S.countSort === 'number') return num(a) - num(b) || byName(a, b);
       if (S.countSort === 'name') return byName(a, b);
-      return counts[a.id] - counts[b.id] || num(a) - num(b);
+      return counts[a.id] - counts[b.id] || byName(a, b);
     });
     const below = sorted.filter(p => counts[p.id] < activeMin).length;
     const done = sorted.length - below;
@@ -2106,8 +2110,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       document.querySelectorAll('#attSortSeg button').forEach(b => b.classList.toggle('active', b.dataset.sort === S.attSort));
       groups.forEach(t => {
         let members = sortRoster(teamRoster(t));
-        if (S.attSort === 'name') members = members.slice().sort((a, b) => lastName(a).localeCompare(lastName(b)) || a.name.localeCompare(b.name));
-        if (S.attSort === 'absent') members = members.slice().sort((a, b) => (sel.present.indexOf(a.id) >= 0 ? 1 : 0) - (sel.present.indexOf(b.id) >= 0 ? 1 : 0) || num(a) - num(b));
+        if (S.attSort === 'number') members = members.slice().sort((a, b) => num(a) - num(b) || byLast(a, b));
+        if (S.attSort === 'absent') members = members.slice().sort((a, b) => (sel.present.indexOf(a.id) >= 0 ? 1 : 0) - (sel.present.indexOf(b.id) >= 0 ? 1 : 0) || byLast(a, b));
         if (!members.length) return;
         if (sel.type === 'practice') {
           const h = document.createElement('div');
@@ -2149,9 +2153,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function seasonSorted(t) {
     const rows = seasonStats(t);
-    if (S.seasonSort === 'name') return rows.sort((a, b) => lastName(a.p).localeCompare(lastName(b.p)));
-    if (S.seasonSort === 'missed') return rows.sort((a, b) => b.missed.length - a.missed.length || a.pct - b.pct || num(a.p) - num(b.p));
-    return rows.sort((a, b) => a.pct - b.pct || b.missed.length - a.missed.length || num(a.p) - num(b.p));
+    if (S.seasonSort === 'name') return rows.sort((a, b) => byLast(a.p, b.p));
+    if (S.seasonSort === 'missed') return rows.sort((a, b) => b.missed.length - a.missed.length || a.pct - b.pct || byLast(a.p, b.p));
+    return rows.sort((a, b) => a.pct - b.pct || b.missed.length - a.missed.length || byLast(a.p, b.p));
   }
   function renderSeason() {
     const season = S.attView === 'season';
@@ -2751,7 +2755,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const g = lastGame(); if (!g) return '';
     activeMin = minFor(g);
     const c = countsFor(g);
-    const ros = presentRoster(g).sort((a, b) => c[a.id] - c[b.id] || num(a) - num(b));
+    const ros = presentRoster(g).sort((a, b) => c[a.id] - c[b.id] || byLast(a, b));
     const lines = [(g.final ? 'FINAL · ' : '') + (g.playoff ? 'PLAYOFF (min 12) · ' : '') + S.team + ' Team ' + evLabel(g) + ' (' + fmtDate(g.date) + ') - ' + g.plays.length + (S.mode === 'tap' ? ' taps' : ' plays')];
     ros.forEach(p => lines.push('#' + (numStr(p) || '-') + ' ' + p.name + ': ' + c[p.id] + (c[p.id] < activeMin ? ' (needs ' + (activeMin - c[p.id]) + ')' : '')));
     const absent = teamRoster(eventTeam(g)).filter(p => !g.present.includes(p.id));
