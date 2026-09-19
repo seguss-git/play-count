@@ -598,7 +598,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.5';
+  const APP_VERSION = '2026.09.19.6';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -2522,7 +2522,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         }
         if (!r.ok && (r.status === 401 || r.status === 403)) {
           pinOk = false;
-          if (S.editPin) throw new Error('the coach PIN was not accepted (or the database rules are not published yet)');
+          if (S.editPin) {
+            // Tell a wrong PIN apart from rules that refuse the data: send the PIN on its own.
+            const c = syncCfg();
+            let alone = null;
+            try { alone = await fetch(c.url + '/w/' + c.code + '.json', { method: 'PATCH', body: JSON.stringify({ p: S.editPin, n: uid() + uid() }) }); } catch (e) { /* offline */ }
+            throw new Error(alone && alone.ok
+              ? 'the PIN is right, but the database rules refused the data (tell Simon: rules problem)'
+              : 'the coach PIN does not match the one saved in Firebase (or the new rules are not published)');
+          }
           // No PIN and the team is locked: this phone watches from here on. What it tried to send is dropped.
           S.writeRefused = true; S.outbox = [];
           localStorage.setItem(KEY, JSON.stringify(S));
