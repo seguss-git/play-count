@@ -457,11 +457,13 @@
 
   <!-- SETTINGS VIEW -->
   <section class="view" id="view-settings">
-    <div class="card">
+    <div class="card" id="syncCard">
       <h2>Team sync</h2>
       <p class="muted small" style="margin:0 0 6px">One shared game for every coach. Once connected, every phone sees the same counts, attendance and roster live. Works with no signal and catches up when it returns.</p>
       <label class="field">Your name, shown to the other coaches when you are counting</label>
       <input id="coachName" placeholder="e.g. Coach Simon" autocomplete="off" maxlength="30">
+      <label class="field" style="margin-top:8px">Coach PIN, only for the coaches who count plays or edit. Leave it empty to watch live.</label>
+      <input id="editPin" placeholder="leave empty to watch" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40">
       <label class="field" style="margin-top:8px">Database link and team code</label>
       <input id="syncUrl" placeholder="https://xxxx-default-rtdb.firebaseio.com" autocomplete="off">
       <input id="syncKey" placeholder="team code" autocomplete="off" style="margin-top:6px">
@@ -589,13 +591,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     <button class="btn danger grow" id="subOff">Take off, no swap</button>
   </div>
 </dialog>
+<div id="viewBar" style="display:none;position:fixed;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));z-index:15;background:var(--panel2);color:var(--muted);border-top:1px solid var(--line);padding:6px 12px;font-size:12px;text-align:center">View only · live from the coaches' phones. Editing needs the coach PIN in Settings.</div>
 <div id="updateBar" style="display:none;position:fixed;left:0;right:0;top:0;z-index:20;background:var(--accent);color:var(--accent-text);padding:12px 16px;font-weight:700;text-align:center;cursor:pointer;padding-top:calc(12px + env(safe-area-inset-top))">New version ready. Tap to update.</div>
 <div class="toast" id="toast"></div>
 
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.4';
+  const APP_VERSION = '2026.09.19.5';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -838,6 +841,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     countSort: 'fewest', // Counts tab order: fewest, most, number, name
     attView: 'take',     // Attendance tab: 'take' or 'season'
     attSort: 'name',     // check list order: name, number, absent
+    editPin: '',         // coach PIN: a phone without it watches the team live but cannot change anything
     nameSort: true,      // older installs get moved to alphabetical lists once
     seasonSort: 'lowest',
     seasonOpen: null,    // player whose missed dates are expanded
@@ -970,7 +974,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
 
   // ---------- rendering ----------
-  function render() { renderHeader(); renderGame(); renderCounts(); renderAttend(); renderRoster(); renderUnitList(); renderFitBoard(); renderSettings(); }
+  function render() { const vw = viewer(); document.body.classList.toggle('viewer', vw); $('#viewBar').style.display = vw ? '' : 'none'; renderHeader(); renderGame(); renderCounts(); renderAttend(); renderRoster(); renderUnitList(); renderFitBoard(); renderSettings(); }
 
   function renderHeader() {
     const g = curGame();
@@ -996,7 +1000,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
           '<br><span class="muted small">' + fmtDate(e.date) + ' · ' + e.plays.length + ' plays · ' + e.present.length + ' present' + (watching ? ' · ' + esc(h.name || 'another phone') + ' counting' : '') + '</span></span>' +
           (e.final ? '<button class="btn small open">Reopen</button>' : '<button class="btn small open">' + (watching ? 'Watch' : 'Count plays') + '</button>');
         row.querySelector('.open').onclick = () => {
-          if (!e.final) return openGame(e.id);
+          if (!e.final || viewer()) return openGame(e.id);
           ask('Reopen this final game? It goes back to counting until you mark it final again.', () => { e.final = false; pushEvent(e); openGame(e.id); });
         };
         list.appendChild(swipeToDelete(row, () => deleteEvent(e)));
@@ -1104,6 +1108,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function holder(g, sd) { return (g && g.counters && g.counters[sd]) || null; }
   function canCount(g, sd) {
     if (!syncOn()) return true;
+    if (viewer()) return false;
     const h = holder(g, sd);
     return !!h && h.dev === S.deviceId;
   }
@@ -1126,6 +1131,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       return;
     }
     bar.style.display = '';
+    if (viewer()) {
+      const vh = holder(g, sd);
+      bar.innerHTML = '<span class="livedot' + (streamOpen && !syncErr ? ' on' : '') + '"></span><span class="who">View only · ' + (vh ? '<b>' + esc(vh.name || 'A coach') + '</b> is counting' : 'nobody is counting ' + esc(sideName(g, sd))) + '</span>';
+      return;
+    }
     const h = holder(g, sd), mine = !!h && h.dev === S.deviceId;
     const live = sideRows(g, sd), last = live[live.length - 1];
     let who, btn;
@@ -2119,6 +2129,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     return wrap;
   }
   function deleteEvent(e) {
+    if (viewer()) return toast(VIEW_MSG);
     ask('Delete ' + evLabel(e) + ' on ' + fmtDate(e.date) + (e.plays.length ? ' and its ' + e.plays.length + ' plays' : '') + '? This removes it for every coach.', () => {
       S.events = S.events.filter(x => x.id !== e.id);
       pushEventDeleted(e);
@@ -2311,6 +2322,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#verLine').textContent = 'Version ' + APP_VERSION + (navigator.onLine ? '' : ' · offline');
     if (document.activeElement !== $('#syncUrl')) $('#syncUrl').value = S.syncUrl || SYNC_URL;
     if (document.activeElement !== $('#syncKey')) $('#syncKey').value = S.syncKey || TEAM_CODE;
+    if (document.activeElement !== $('#editPin')) $('#editPin').value = S.editPin || '';
     if (document.activeElement !== $('#coachName')) $('#coachName').value = S.coachName || '';
     renderSyncStatus();
     if (document.activeElement !== $('#sheetUrl')) $('#sheetUrl').value = S.sheetUrl || '';
@@ -2429,7 +2441,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // /t/<team code>. One live stream (EventSource) brings each change from every phone the
   // moment it lands; writes wait in an outbox that survives no signal and app restarts.
   let syncErr = '', lastSyncAt = 0, flushing = false, flushTimer = null;
-  let stream = null, streamOpen = false, streamAt = 0, mirror = null;
+  let stream = null, streamOpen = false, streamAt = 0, mirror = null, pinOk = false;
   const SV = { '.sv': 'timestamp' };
   function syncCfg() {
     return { url: String(S.syncUrl || SYNC_URL).trim().replace(/\/+$/, ''), code: String(S.syncKey || TEAM_CODE).trim() };
@@ -2438,7 +2450,19 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function syncReady() { const c = syncCfg(); return /^(https:\/\/|http:\/\/localhost[:/])/.test(c.url) && /^[A-Za-z0-9_-]{16,}$/.test(c.code); }
   function syncOn() { return syncReady() && !!S.coachName; }
   function dbBase() { const c = syncCfg(); return c.url + '/t/' + c.code; }
+  // The team can be locked to a coach PIN. The database rules only accept a write that carries the PIN
+  // (sent to /w/<team code>, which nobody can read back), so a phone without it watches live and that is all.
+  // A team counts as locked once a PIN phone has said so, or once the database has refused this phone.
+  const VIEW_MSG = 'View only. Editing needs the coach PIN in Settings.';
+  function viewer() { return syncOn() && !S.editPin && !!(S.teamLocked || S.writeRefused); }
+  function noteLocked() {
+    const on = !!(mirror && mirror.config && mirror.config.locked);
+    if (on && S.writeRefused) S.writeRefused = false;
+    if (on === !!S.teamLocked) return false;
+    S.teamLocked = on; return true;
+  }
   function enqueue(path, value) {
+    if (viewer()) return;
     S.outbox = (S.outbox || []).filter(o => o.path && o.path !== path);
     S.outbox.push({ path: path, value: value });
     if (mirror) setIn(mirror, path.split('/'), stripSv(value));
@@ -2482,16 +2506,39 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     flushing = true;
     try {
       S.outbox = S.outbox.filter(o => o.path);
+      if (viewer()) S.outbox = [];
       while (S.outbox.length) {
         const batch = S.outbox.slice(0, 300), body = {};
-        batch.forEach(o => { body[o.path] = o.value; });
-        const r = await fetch(dbBase() + '.json', { method: 'PATCH', body: JSON.stringify(body) });
-        if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'the database refused access (check its rules)' : 'HTTP ' + r.status);
+        let r;
+        if (S.editPin) {
+          // One update from the top of the database: the records, plus the PIN and a fresh stamp the rules look for.
+          const c = syncCfg(), pre = 't/' + c.code + '/';
+          batch.forEach(o => { body[pre + o.path] = o.value; });
+          body['w/' + c.code] = { p: S.editPin, n: uid() + uid() };
+          r = await fetch(c.url + '/.json', { method: 'PATCH', body: JSON.stringify(body) });
+        } else {
+          batch.forEach(o => { body[o.path] = o.value; });
+          r = await fetch(dbBase() + '.json', { method: 'PATCH', body: JSON.stringify(body) });
+        }
+        if (!r.ok && (r.status === 401 || r.status === 403)) {
+          pinOk = false;
+          if (S.editPin) throw new Error('the coach PIN was not accepted (or the database rules are not published yet)');
+          // No PIN and the team is locked: this phone watches from here on. What it tried to send is dropped.
+          S.writeRefused = true; S.outbox = [];
+          localStorage.setItem(KEY, JSON.stringify(S));
+          syncErr = ''; render();
+          return;
+        }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (S.editPin) pinOk = true;
         // Only drop what was sent; anything queued meanwhile for the same path stays.
         S.outbox = S.outbox.filter(o => !batch.some(b => b === o));
         localStorage.setItem(KEY, JSON.stringify(S));
       }
       lastSyncAt = Date.now(); syncErr = '';
+      if (S.editPin && pinOk && mirror && !S.teamLocked && !(mirror.config && mirror.config.locked)) {
+        enqueue('config/locked', { on: true, u: SV });
+      }
     } catch (e) {
       syncErr = navigator.onLine === false ? 'no signal' : String(e && e.message ? e.message : e);
       clearTimeout(flushTimer); flushTimer = setTimeout(runSync, 5000);
@@ -2537,14 +2584,15 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (isPatch) Object.keys(msg.data || {}).forEach(k => { const p = at.concat(k.split('/').filter(Boolean)); setIn(mirror, p, msg.data[k]); paths.push(p); });
     else { setIn(mirror, at, msg.data); paths.push(at); }
     S.outbox.forEach(o => setIn(mirror, o.path.split('/'), stripSv(o.value)));
-    if (applyMirror(paths)) { localStorage.setItem(KEY, JSON.stringify(S)); render(); }
+    const lockChanged = noteLocked();
+    if (applyMirror(paths) || lockChanged) { localStorage.setItem(KEY, JSON.stringify(S)); render(); }
     else renderSyncStatus();
   }
   // The whole team tree: on first connect, and again after every reconnect.
   function gotSnapshot(data) {
     mirror = data;
     S.outbox.forEach(o => setIn(mirror, o.path.split('/'), stripSv(o.value)));
-    let changed = false;
+    let changed = noteLocked();
     const serverHasTeam = !!(data.config && data.config.roster);
     // A brand-new or emptied database gets this phone's copy.
     if (!serverHasTeam) S.syncBootstrapped = false;
@@ -2687,7 +2735,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!S.coachName) return 'Enter your name above to join team sync.';
     const waiting = S.outbox.length ? ' · ' + S.outbox.length + ' waiting to send' : '';
     if (syncErr) return 'Problem: ' + syncErr + waiting;
-    if (streamOpen) return 'Live' + waiting;
+    if (viewer()) return streamOpen ? 'Live · view only' : 'Connecting…';
+    if (streamOpen) return 'Live' + (S.editPin ? (pinOk ? ' · coach PIN accepted' : ' · coach PIN not checked yet') : (S.teamLocked ? '' : ' · team is not locked to a PIN yet')) + waiting;
     return (navigator.onLine === false ? 'No signal, will catch up' : 'Connecting…') + waiting;
   }
   function renderSyncStatus() {
@@ -2866,6 +2915,21 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     $('#confirmNo').onclick = () => d.close();
     d.showModal();
   }
+  // A view-only phone can look at everything and change nothing. Whatever is not on this list is stopped
+  // before its handler runs; the database would refuse the write anyway.
+  const VIEW_OK = 'nav, .seg, .open, #syncCard, #fieldToggle, #focusBtn, #endGameBtn, #oppCopyBtn, #copyBtn, #shareBtn, #csvBtn, #sheet72Btn, ' +
+    '#copySheetBtn, #attendDoneBtn, #seasonCopyBtn, #exportBtn, #checkUpdBtn, #copyDlg, #updateBar, #eventList .rrow, #fitCard';
+  function viewBlocked(t) {
+    if (!viewer() || !t || !t.closest) return false;
+    if (!t.closest('button, input, select, textarea, label, .chip, .arow, .rrow, .ubtn, .spot')) return false;
+    return !t.closest(VIEW_OK);
+  }
+  ['click', 'change', 'input', 'submit', 'focusin'].forEach(type => document.addEventListener(type, (e) => {
+    if (!viewBlocked(e.target)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (type === 'focusin' && e.target.blur) e.target.blur();
+    if (type === 'click') toast(VIEW_MSG);
+  }, true));
   function showView(name) {
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
     document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
@@ -2995,6 +3059,11 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!S.coachName) stopStream();
     render();
   };
+  $('#editPin').onchange = (e) => {
+    S.editPin = e.target.value.trim(); S.writeRefused = false; pinOk = false; syncErr = '';
+    save(); render();
+    if (S.editPin && syncOn()) { enqueue('config/locked', { on: true, u: SV }); toast('Checking the PIN…'); }
+  };
   $('#syncNowBtn').onclick = () => { syncErr = ''; startStream(); scheduleSync(0); renderSyncStatus(); };
   // The stream sends a keep-alive about every 30 seconds. If it goes quiet, or a phone woke from
   // sleep with a dead connection, open a fresh one; the snapshot it starts with catches up.
@@ -3088,17 +3157,18 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#sheet72Btn').onclick = async () => { const t = minPlaySheetText(); try { await navigator.clipboard.writeText(t); toast('Min play sheet copied'); } catch (err) { window.prompt('Copy this:', t); } };
   $('#csvBtn').onclick = () => { const t = csvText(); if (!t) return toast('No game yet'); download(S.team + '-playcount-' + lastGame().date + '.csv', t, 'text/csv'); };
 
-  $('#exportBtn').onclick = () => download(S.team + '-playcount-backup-' + today() + '.json', JSON.stringify(S, null, 2), 'application/json');
+  $('#exportBtn').onclick = () => download(S.team + '-playcount-backup-' + today() + '.json', JSON.stringify(S, (k, v) => (k === 'editPin' ? undefined : v), 2), 'application/json');   // the coach PIN never leaves in a backup
   $('#importBtn').onclick = () => $('#importFile').click();
   $('#importFile').onchange = (e) => {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
     r.onload = () => {
       try {
-        const d = JSON.parse(r.result);
+        const d = JSON.parse(r.result), pin = S.editPin || '';
         if (Array.isArray(d.roster) && Array.isArray(d.games)) S = migrate(d);
         else if (Array.isArray(d.roster) && Array.isArray(d.events)) S = Object.assign(defaults(), d);
         else throw new Error('bad');
+        S.editPin = pin;
         save(); render(); toast('Restored');
       } catch (err) { toast('Not a valid backup'); }
       e.target.value = '';

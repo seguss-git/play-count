@@ -55,7 +55,16 @@ The team's database (`djfl4-c1d2b`) is already built in. **A phone joins when it
 
 **How it behaves.** Every change goes into a local queue and is sent the moment there is signal; a live stream brings every other phone's changes within a second or two, and a phone that loses signal catches up from a fresh snapshot when it returns. Plays are individual records with an id and the phone that recorded them, so nothing is lost or double-counted by the sync itself. The green dot in the header means the phone is live.
 
-The database holds player names, attendance and play counts and nothing else. Data sits under a long team code that the rules require; anyone who has the app's code can read and write it, so do not put anything private there.
+The database holds player names, attendance and play counts and nothing else. Data sits under a long team code that the rules require. Anyone with the app can read it, so do not put anything private there.
+
+**Coach PIN: who can edit.** Anyone who joins can watch live. Changing anything needs the coach PIN, typed once into Settings, Team sync. A phone without it shows "View only": every tab still works for looking, and every control that changes something is switched off. The database enforces this itself, so it holds even against someone who skips the app. To set it up, in this order:
+
+1. Firebase console, Realtime Database, **Data** tab: at the top level add `pins`, and under it a child named with the team code whose value is the PIN. Use at least 10 characters with some letters in it, so it is stored as text and cannot be guessed quickly.
+2. **Rules** tab: paste `firebase-rules.json` from this repo and Publish. From this moment a phone without the PIN cannot write.
+3. On your phone, Settings, Team sync: type the PIN. The status line should read "Live · coach PIN accepted". That phone also marks the team as locked, which is what flips every other phone to view only.
+4. Give the PIN to the coaches who count or edit, and nobody else. To change it later, edit the value under `pins` and hand out the new one.
+
+The PIN travels with each write to a part of the database nobody can read, and it is left out of Backup files. To go back to open editing, publish the old two-line rules again.
 
 ## Offline and updates
 

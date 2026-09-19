@@ -3,8 +3,18 @@
     "t": {
       "$team": {
         ".read": "$team.length >= 20",
-        ".write": "$team.length >= 20"
+        ".write": "$team.length >= 20 && root.child('pins').child($team).exists() && newData.parent().parent().child('w').child($team).child('p').val() === root.child('pins').child($team).val() && newData.parent().parent().child('w').child($team).child('n').val() !== root.child('w').child($team).child('n').val()"
       }
+    },
+    "w": {
+      "$team": {
+        ".read": false,
+        ".write": "root.child('pins').child($team).exists() && newData.child('p').val() === root.child('pins').child($team).val()"
+      }
+    },
+    "pins": {
+      ".read": false,
+      ".write": false
     }
   }
 }
