@@ -604,7 +604,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.11';
+  const APP_VERSION = '2026.09.19.12';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1816,7 +1816,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const alts = Object.keys(u.alts || {}).filter(id => player(id));
       row.innerHTML = '<span class="grow"><b>' + esc(u.name) + '</b> <span class="muted small">' + who.length + '</span>' + (sd ? ' <span class="tag">' + (sd === 'off' ? 'Offense' : 'Defense') + '</span>' : '') + '<br><span class="muted small">' +
         (who.length ? esc(who.map(p => ((u.pos && u.pos[p.id]) ? u.pos[p.id] + ' ' : '') + p.name.split(/\s+/).slice(-1)[0]).join(', ')) : 'nobody yet') +
-        (alts.length ? esc(' · Alternates: ' + alts.map(id => u.alts[id] + ' ' + lastName(player(id))).join(', ')) : '') + '</span></span>' +
+        (alts.length ? esc(' · Alternates: ' + alts.map(id => u.alts[id] + ' ' + lastName(player(id))).join(', ')) : '') + '</span>' + dupeNote(u) + '</span>' +
         '<button class="btn small edit">Edit</button><button class="btn small danger del">✕</button>';
       row.querySelector('.edit').onclick = () => openUnitEditor(u.id, null);
       row.querySelector('.del').onclick = () => ask('Delete the ' + u.name + ' unit? Play counts are not affected.', () => {
@@ -1826,6 +1826,16 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     });
   }
 
+  // Two players given the same spot is nearly always a slip in the editor, so say so.
+  function unitDupes(u) {
+    const by = {};
+    u.members.forEach(id => { const q = u.pos && u.pos[id]; if (q && player(id)) (by[q] = by[q] || []).push(lastName(player(id))); });
+    return Object.keys(by).filter(q => by[q].length > 1).map(q => q + ': ' + by[q].join(' and '));
+  }
+  function dupeNote(u) {
+    const d = unitDupes(u);
+    return d.length ? '<div class="small" style="color:var(--red);margin:2px 0 6px">Same spot twice · ' + esc(d.join('; ')) + '. Tap Edit to fix.</div>' : '';
+  }
   // One unit as a field diagram: who lines up where, the alternate under his starter, anyone without a spot below.
   function unitFieldCard(u) {
     const wrap = document.createElement('div'); wrap.style.marginBottom = '14px';
@@ -1835,6 +1845,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       (sd ? ' <span class="tag">' + (sd === 'off' ? 'Offense' : 'Defense') + '</span>' : '') + '</span><button class="btn small edit">Edit</button>';
     head.querySelector('.edit').onclick = () => openUnitEditor(u.id, null);
     wrap.appendChild(head);
+    wrap.insertAdjacentHTML('beforeend', dupeNote(u));
     const box = document.createElement('div'); box.className = 'fieldwrap ufield';
     box.innerHTML = '<span class="los">LINE OF SCRIMMAGE</span>';
     const altAt = {};
