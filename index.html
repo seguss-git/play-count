@@ -604,7 +604,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.10';
+  const APP_VERSION = '2026.09.19.11';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1510,7 +1510,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         if (lined) {
           const n = cols.length, k = cols.indexOf(spot.x);
           const gapL = i ? k - cols.indexOf(row[i - 1].x) : 3, gapR = i < row.length - 1 ? cols.indexOf(row[i + 1].x) - k : 3;
-          const w = Math.min(3, gapL, gapR);
+          // Never wider than the room to the nearer edge, or an end spot (Z) slides inward off its own column.
+          const w = Math.min(3, gapL, gapR, 2 * (k + 0.5), 2 * (n - k - 0.5));
           const left = Math.max(0, Math.min(n - w, k + 0.5 - w / 2));
           b.style.left = (left / n * 100) + '%';
           b.style.width = (w / n * 100) + '%';
