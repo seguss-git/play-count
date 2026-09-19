@@ -491,18 +491,6 @@
       <div id="seasonList"></div>
     </div>
     <div class="card">
-      <h2>Data</h2>
-      <div class="row wrap">
-        <button class="btn grow" id="exportBtn">Backup (JSON)</button>
-        <button class="btn grow" id="importBtn">Restore</button>
-        <input type="file" id="importFile" accept="application/json" style="display:none">
-        <button class="btn danger grow" id="resetBtn">Reset Everything</button>
-      </div>
-      <p class="muted small">Everything is saved on this device only. Use Backup to move it to another phone.</p>
-      <p class="muted small" id="verLine"></p>
-      <div class="row wrap"><button class="btn small" id="checkUpdBtn">Check for update now</button><span class="muted small grow" id="updStatus"></span></div>
-    </div>
-    <div class="card">
       <h2>Head coach's sheet</h2>
       <p class="muted small" style="margin:0 0 6px">The app never touches the sheet. Once: in the sheet, select the players' names from the first player down (the Last Name column, or Last and First together), copy, and paste here. After that, <b>Copy for sheet</b> on a practice gives a column of Y and blanks in the same order, to paste under that date.</p>
       <textarea id="sheetOrderText" rows="5" spellcheck="false" placeholder="Paste the names from the sheet, one per line"></textarea>
@@ -513,6 +501,18 @@
       <p class="muted small" style="margin:0 0 6px">Paste the web app link from the Apps Script you deployed on your attendance sheet. Attendance then posts straight into it. The link is stored on this device only.</p>
       <input id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
       <div class="row" style="margin-top:8px"><button class="btn small" id="sheetTestBtn">Send a test row</button><span class="muted small grow" id="sheetStatus"></span></div>
+    </div>
+    <div class="card">
+      <h2>Data</h2>
+      <div class="row wrap">
+        <button class="btn grow" id="exportBtn">Backup (JSON)</button>
+        <button class="btn grow" id="importBtn">Restore</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none">
+        <button class="btn danger grow" id="resetBtn">Reset Everything</button>
+      </div>
+      <p class="muted small">Everything is saved on this device only. Use Backup to move it to another phone.</p>
+      <p class="muted small" id="verLine"></p>
+      <div class="row wrap"><button class="btn small" id="checkUpdBtn">Check for update now</button><span class="muted small grow" id="updStatus"></span></div>
     </div>
   </section>
 </main>
@@ -604,7 +604,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.9';
+  const APP_VERSION = '2026.09.19.10';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
