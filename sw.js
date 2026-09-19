@@ -5,7 +5,7 @@
  * with a connection gets the newest version on their next open, and anyone without
  * one gets the copy from last time. Bump VERSION when shipping to purge old caches.
  */
-var VERSION = '2026.09.19.12';
+var VERSION = '2026.09.19.13';
 var CACHE = 'djfl4-' + VERSION;
 var SHELL = ['./', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png'];
 var NETWORK_TIMEOUT_MS = 4000;
