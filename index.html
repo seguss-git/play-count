@@ -611,12 +611,14 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.10.03.1';
+  const APP_VERSION = '2026.10.03.2';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
   const TEAM_CODE = 'gdyvp7dgcgedqskwvkaqvwxr';
   let lastCfgHash = '';
+  let lastUnitHashes = {};   // id -> JSON of the unit as it last went to, or came from, the server
+  let adoptingTeam = false;  // true only while this phone takes on a team's stored copy
   const KEY = 'playcount.v2', OLD_KEY = 'playcount.v1';
   const $ = (s) => document.querySelector(s);
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -761,6 +763,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // and nothing anyone has edited is overwritten.
   function seedDefaults() {
     let touched = false;
+    const freshInstall = !S.units.length;   // decided before the chart below plants any
     if (!S.template.length) { S.template = SEED_WHITE.slice(); touched = true; }
     if (!S.templateB.length) { S.templateB = SEED_BLUE.slice(); touched = true; }
     if (!teamRoster('White').length) {
@@ -785,14 +788,24 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const fixed = UNIT_FIXES[String(u.name || '').trim().toUpperCase()];
       if (fixed && u.name !== fixed) { u.name = fixed; touched = true; }
     });
+    // The usual names, planted once. Without the record of what has been planted, a unit the
+    // coaches deleted or renamed came back as an empty one on the next open, on every phone.
+    const offNames = SEED_OFFENSE.slice(1).map(row => row.split(',')[0].trim().toUpperCase());
+    if (!Array.isArray(S.seededUnits)) {
+      S.seededUnits = freshInstall ? [] : UNIT_NAMES.concat(offNames); touched = true;
+    }
     UNIT_NAMES.forEach(n => {
-      if (!S.units.some(u => (u.team || 'White') === 'White' && String(u.name).trim().toUpperCase() === n)) {
-        S.units.push({ id: uid(), name: n, team: 'White', members: [], pos: {}, layout: {} }); touched = true;
-      }
+      if (S.seededUnits.indexOf(n) >= 0) return;
+      S.seededUnits.push(n); touched = true;
+      if (S.units.some(u => (u.team || 'White') === 'White' && String(u.name).trim().toUpperCase() === n)) return;
+      S.units.push({ id: uid(), name: n, team: 'White', members: [], pos: {}, layout: {} });
     });
-    // Offensive units an install does not have yet. One it already has is left as the coaches edited it.
+    // Offensive units an install has never been given. One it already has is left as the coaches
+    // edited it, and one they deleted or renamed stays that way: planted once, recorded for good.
     const newOff = SEED_OFFENSE.slice(1).filter(row => {
-      const n = row.split(',')[0].trim();
+      const n = row.split(',')[0].trim().toUpperCase();
+      if (S.seededUnits.indexOf(n) >= 0) return false;
+      S.seededUnits.push(n); touched = true;
       return !S.units.some(u => (u.team || 'White') === 'White' && String(u.name).trim().toUpperCase() === n);
     });
     if (newOff.length) { importChartText([SEED_OFFENSE[0]].concat(newOff).join('\n'), 'White'); touched = true; }
@@ -954,7 +967,10 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function save() {
     localStorage.setItem(KEY, JSON.stringify(S));
     const h = JSON.stringify([S.roster, S.units]);
-    if (h !== lastCfgHash) { lastCfgHash = h; if (S.syncBootstrapped && typeof syncOn === 'function' && syncOn()) enqueueConfig(); }
+    if (h !== lastCfgHash) {
+      lastCfgHash = h;
+      if (S.syncBootstrapped && typeof syncOn === 'function' && syncOn()) { enqueueConfig(); enqueueUnitChanges(); }
+    }
   }
 
   const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
@@ -2658,13 +2674,29 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   function stripSv(v) { if (!v || typeof v !== 'object') return v; const o = {}; Object.keys(v).forEach(k => { if (k !== 'u') o[k] = v[k]; }); return o; }
   function enqueueConfig() {
     enqueue('config/roster', { json: JSON.stringify(S.roster), u: SV });
-    enqueue('config/units', { json: JSON.stringify(S.units), u: SV });
+    // v2 marks a blob written beside units/<id> records, so another phone on this version
+    // knows to ignore it and read the records instead. A blob without it came from a phone on
+    // an older version, which is the only blob worth merging from.
+    enqueue('config/units', { json: JSON.stringify(S.units), v2: true, u: SV });
   }
   function eventRecord(e, deleted) {
     const r = { type: e.type, date: e.date, opponent: e.opponent || '', final: !!e.final, playoff: !!e.playoff, deleted: !!deleted, u: SV };
     if (e.team) r.team = e.team;
     if (!deleted && typeof e.half === 'number') r.half = e.half;
     return r;
+  }
+  function unitHashes() { const o = {}; S.units.forEach(u => { o[u.id] = JSON.stringify(u); }); return o; }
+  // Units travel one record each, so two phones editing different units merge instead of the
+  // last writer's whole list winning. config/units is still written for phones on an older
+  // version, which read only that blob; units/<id> is the truth for anyone on this one.
+  function pushUnit(u) { if (syncOn()) enqueue('units/' + u.id, { json: JSON.stringify(u), del: false, u: SV }); }
+  function pushUnitDeleted(id) { if (syncOn()) enqueue('units/' + id, { del: true, u: SV }); }
+  function enqueueUnitChanges() {
+    if (!syncOn()) return;
+    const now = unitHashes();
+    Object.keys(now).forEach(id => { if (now[id] !== lastUnitHashes[id]) pushUnit(S.units.find(u => u.id === id)); });
+    Object.keys(lastUnitHashes).forEach(id => { if (!(id in now)) pushUnitDeleted(id); });
+    lastUnitHashes = now;
   }
   function pushEvent(e) { if (syncOn()) enqueue('events/' + e.id, eventRecord(e, false)); }
   function pushEventDeleted(e) { if (syncOn()) enqueue('events/' + e.id, eventRecord(e, true)); }
@@ -2683,6 +2715,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
   function pushEverything() {
     enqueueConfig();
+    S.units.forEach(pushUnit); lastUnitHashes = unitHashes();
     S.events.forEach(e => { pushEvent(e); pushAllAttendance(e); (e.rows || []).forEach(r => pushPlay(e, r)); if (e.oppRoster && e.oppRoster.length) pushOpp(e); });
   }
   function scheduleSync(ms) { if (!syncOn()) return; clearTimeout(flushTimer); flushTimer = setTimeout(runSync, ms || 0); }
@@ -2792,8 +2825,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!serverHasTeam) S.syncBootstrapped = false;
     if (!S.syncBootstrapped) {
       S.syncBootstrapped = true;
-      if (!serverHasTeam) { pushEverything(); lastCfgHash = JSON.stringify([S.roster, S.units]); localStorage.setItem(KEY, JSON.stringify(S)); renderSyncStatus(); return; }
-      changed = applyMirror([[]]);
+      if (!serverHasTeam) { pushEverything(); lastCfgHash = JSON.stringify([S.roster, S.units]); lastUnitHashes = unitHashes(); localStorage.setItem(KEY, JSON.stringify(S)); renderSyncStatus(); return; }
+      adoptingTeam = true;
+      try { changed = applyMirror([[]]); } finally { adoptingTeam = false; }
       // Events only this phone has: keep the ones with plays and send them up, drop the rest
       // (a fresh install seeds its own copy of the practices, which the server already has).
       const keep = [];
@@ -2805,6 +2839,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       if (keep.length !== S.events.length) { S.events = keep; changed = true; }
       if (S.selectedEventId && !ev(S.selectedEventId)) S.selectedEventId = null;
       lastCfgHash = JSON.stringify([S.roster, S.units]);
+      lastUnitHashes = unitHashes();
     } else {
       changed = applyMirror([[]]);
     }
@@ -2814,8 +2849,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   // Turn changed paths in the mirror into the row shapes applyRemote understands.
   function applyMirror(paths) {
     const M = mirror || {};
-    const want = { config: {}, events: {}, attendance: {}, plays: {}, opp: false, counters: false };
-    const all = { config: false, events: false, attendance: false, plays: false };
+    const want = { config: {}, events: {}, units: {}, attendance: {}, plays: {}, opp: false, counters: false };
+    const all = { config: false, events: false, units: false, attendance: false, plays: false };
     paths.forEach(p => {
       const kind = p[0];
       if (!kind) { Object.keys(all).forEach(k => { all[k] = true; }); want.opp = want.counters = true; return; }
@@ -2841,6 +2876,9 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (cfg.length && applyRemote('djfl_config', cfg)) changed = true;
     const evs = pick('events').map(id => { const r = M.events && M.events[id]; return r ? Object.assign({ id: id }, r) : null; }).filter(Boolean);
     if (evs.length && applyRemote('djfl_events', evs)) changed = true;
+    // After config, so a per-unit record always beats the legacy blob it was written beside.
+    const uns = pick('units').map(id => { const r = M.units && M.units[id]; return r ? Object.assign({ id: id }, r) : null; }).filter(Boolean);
+    if (uns.length && applyRemote('djfl_units', uns)) changed = true;
     const nested = (kind, toRow) => {
       const out = [];
       pick(kind).forEach(gid => {
@@ -2874,9 +2912,56 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (t === 'djfl_config') {
       rows.forEach(r => {
         if (r.key === 'roster' && Array.isArray(r.data) && JSON.stringify(r.data) !== JSON.stringify(S.roster)) { S.roster = r.data; changed = true; }
-        if (r.key === 'units' && Array.isArray(r.data) && JSON.stringify(r.data) !== JSON.stringify(S.units)) { S.units = r.data; changed = true; }
+        if (r.key !== 'units' || !Array.isArray(r.data)) return;
+        if (adoptingTeam) {
+          // Joining a team: take its list as it stands, then the unit records refine it.
+          if (JSON.stringify(r.data) !== JSON.stringify(S.units)) { S.units = r.data; changed = true; }
+          return;
+        }
+        // Afterwards the blob only carries units this phone has never heard of, which is how a
+        // unit made on an older version still arrives. It never edits or removes a unit that
+        // has a record of its own, and never deletes anything: only a tombstone does that.
+        const recs = (mirror && mirror.units) || {};
+        const blob = (mirror && mirror.config && mirror.config.units) || null;
+        const legacy = !!blob && !blob.v2;          // written by a phone on an older version
+        const blobAt = Number((blob && blob.u) || 0);
+        r.data.forEach(u => {
+          if (!u || !u.id) return;
+          const rec = recs[u.id];
+          if (rec) {
+            if (rec.del) return;                  // a deleted unit is not coming back from a blob
+            // An older phone writes only the blob, so take its copy of a unit when the blob is
+            // the later write. A unit edited here since then has a newer record and is left be.
+            if (!legacy || !blobAt || blobAt <= Number(rec.u || 0)) return;
+            const i = S.units.findIndex(x => x.id === u.id);
+            if (i >= 0 && JSON.stringify(S.units[i]) === JSON.stringify(u)) return;
+            if (i >= 0) S.units[i] = u; else S.units.push(u);
+            changed = true; pushUnit(u);
+            return;
+          }
+          if (S.units.some(x => x.id === u.id)) return;
+          S.units.push(u); changed = true;
+          pushUnit(u);   // normalise it into units/<id> so it merges from here on
+        });
       });
-      if (changed) lastCfgHash = JSON.stringify([S.roster, S.units]);
+      if (changed) { lastCfgHash = JSON.stringify([S.roster, S.units]); lastUnitHashes = unitHashes(); }
+    } else if (t === 'djfl_units') {
+      rows.forEach(r => {
+        const i = S.units.findIndex(u => u.id === r.id);
+        if (r.del) {
+          if (i >= 0) {
+            S.units.splice(i, 1); changed = true;
+            if (S.activeUnitId === r.id) S.activeUnitId = null;
+          }
+          return;
+        }
+        let data = null; try { data = r.json ? JSON.parse(r.json) : null; } catch (e) { data = null; }
+        if (!data || !data.id) return;
+        if (i < 0) { S.units.push(data); changed = true; }
+        else if (JSON.stringify(S.units[i]) !== JSON.stringify(data)) { S.units[i] = data; changed = true; }
+      });
+      // Keep the hashes level with the server, or the next save would send this straight back.
+      if (changed) { lastCfgHash = JSON.stringify([S.roster, S.units]); lastUnitHashes = unitHashes(); }
     } else if (t === 'djfl_events') {
       rows.forEach(r => {
         const i = S.events.findIndex(e => e.id === r.id);
@@ -3403,6 +3488,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   seedDefaults();
   applyLink();
   lastCfgHash = JSON.stringify([S.roster, S.units]);
+  lastUnitHashes = unitHashes();
   if (syncOn()) { startStream(); scheduleSync(1500); }
   // ---------- offline + updates ----------
   // The service worker caches the app so it opens with no signal. The page is always
