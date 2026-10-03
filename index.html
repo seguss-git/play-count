@@ -546,6 +546,8 @@
 <dialog id="saveUnitDlg">
   <h2 style="margin:0 0 2px;font-size:17px">Save to unit</h2>
   <p class="muted small" style="margin:0 0 10px" id="saveUnitSub"></p>
+  <div class="row" style="margin:0 0 4px"><button class="btn small" id="saveUnitAbs" style="display:none"></button></div>
+  <p class="muted small" style="margin:0 0 10px;display:none" id="saveUnitAbsNote"></p>
   <div id="saveUnitList" style="max-height:50vh;overflow-y:auto"></div>
   <div class="row" style="margin-top:12px">
     <button class="btn grow" id="saveUnitCancel">Cancel</button>
@@ -609,7 +611,7 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
 <script>
 (function () {
   'use strict';
-  const APP_VERSION = '2026.09.19.18';
+  const APP_VERSION = '2026.10.03.1';
   // Shared team database (Firebase Realtime Database). Baked in so no coach has to set anything up;
   // Settings can override. Everything lives under /t/<team code>.
   const SYNC_URL = 'https://djfl4-c1d2b-default-rtdb.firebaseio.com';
@@ -1090,7 +1092,8 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
         const pos = on && !watchUs ? (S.spots[p.id] || '') : '';
         b.className = 'chip' + (on ? ' on' : '') + ' ' + level(counts[p.id]);
         b.innerHTML = '<span class="cnt">' + counts[p.id] + '</span><span class="big' + (n ? '' : ' txt') + '">' + esc(big) + '</span><span class="name">' + esc(small) + '</span>' +
-          (pos ? '<span class="pos">' + esc(pos) + '</span>' : '');
+          (pos ? '<span class="pos">' + esc(pos) + '</span>'
+               : (on && !watchUs ? '<span class="pos" style="opacity:.5" title="no spot recorded">?</span>' : ''));
         if (!watchUs) b.onclick = () => toggle(p.id);
       }
       grid.appendChild(b);
@@ -1442,8 +1445,12 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       const pl = player(id), ps = positionsOf(id);
       const allowed = (o) => !(pl && pl.limited) || limitedOk(o);
       const free = open.filter(o => allowed(o) && held().indexOf(o) < 0);
+      // A spot he plays, its mirror, or one in the same group. Otherwise only when there is a
+      // single open spot and nothing on the chart to go on: guessing among several wrote kids
+      // into the chart at spots nobody had picked (a corner left standing at L-DG).
       const pick = free.find(o => ps.indexOf(o) >= 0) || free.find(o => ps.indexOf(mirrorPos(o)) >= 0) ||
-        free.find(o => ps.some(x => posGroup(x) === posGroup(o))) || free[0] ||
+        free.find(o => ps.some(x => posGroup(x) === posGroup(o))) ||
+        (!ps.length && free.length === 1 ? free[0] : '') ||
         ps.find(x => held().indexOf(x) < 0) || '';
       claim(id, pick);
     });
@@ -1758,29 +1765,33 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   }
 
   // The group on the field, with the spot each kid is standing in, written back into a unit.
-  // Absent members keep their place unless someone on the field was saved into it.
-  function unitFromField(u) {
+  // An absent member keeps his place by default, so a save on a thin night does not empty the
+  // unit; `kept` names them so the dialog can say so, and Drop absent (keepAbsent false) takes
+  // them out, which is the only way a removal sticks while a kid is marked absent.
+  function unitFromField(u, keepAbsent) {
     const ids = lineupIds();
     const pos = {};
     ids.forEach(id => { if (S.spots[id]) pos[id] = S.spots[id]; });
     const g = curGame();
     const members = ids.slice();
-    if (u) {
+    const kept = [];
+    if (u && keepAbsent !== false) {
       const held = Object.keys(pos).map(id => pos[id]);
       u.members.forEach(id => {
         if (members.indexOf(id) >= 0 || !g || g.present.includes(id) || !player(id)) return;
         const p = u.pos && u.pos[id];
         if (p && held.indexOf(p) >= 0) return;
         members.push(id); if (p) pos[id] = p;
+        kept.push(id);
       });
     }
-    return { members: members, pos: pos };
+    return { members: members, pos: pos, kept: kept };
   }
   function unitChanges(u, next) {
     const out = [], old = u.pos || {};
     next.members.forEach(id => {
-      if (u.members.indexOf(id) < 0) out.push(lastName(player(id)) + ' in' + (next.pos[id] ? ' at ' + next.pos[id] : ''));
-      else if ((old[id] || '') !== (next.pos[id] || '')) out.push(lastName(player(id)) + ' ' + (old[id] || '?') + ' → ' + (next.pos[id] || '?'));
+      if (u.members.indexOf(id) < 0) out.push(lastName(player(id)) + ' in' + (next.pos[id] ? ' at ' + next.pos[id] : ' with no spot'));
+      else if ((old[id] || '') !== (next.pos[id] || '')) out.push(lastName(player(id)) + ' ' + (old[id] || 'no spot') + ' → ' + (next.pos[id] || 'no spot'));
     });
     u.members.forEach(id => { if (next.members.indexOf(id) < 0 && player(id)) out.push(lastName(player(id)) + ' out'); });
     return out;
@@ -1793,18 +1804,30 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     const au = formationUnit(ids);
     const units = myUnits().slice().sort((a, b) => (b === au) - (a === au));
     if (!units.length) list.innerHTML = '<div class="empty">No units yet. Use New unit.</div>';
+    const keepAbsent = S.keepAbsentOnSave !== false;
+    let anyAbsent = 0;
     units.forEach(u => {
-      const ch = unitChanges(u, unitFromField(u));
+      const next = unitFromField(u, keepAbsent);
+      const ch = unitChanges(u, next);
+      const kept = (unitFromField(u, true).kept || []).map(id => lastName(player(id)));
+      anyAbsent += kept.length;
       const b = document.createElement('button');
       b.className = 'cand';
+      const note = ch.length ? esc(ch.slice(0, 4).join(' · ') + (ch.length > 4 ? ' · +' + (ch.length - 4) + ' more' : ''))
+        : (keepAbsent && kept.length ? 'no changes · keeping ' + esc(kept.join(', ')) + ' (absent)' : 'no changes');
       b.innerHTML = '<span class="nm"><b>' + esc(u.name) + '</b>' + (u === au ? ' <span class="why t0">on the field</span>' : '') +
-        '<br><span class="muted small">' + (ch.length ? esc(ch.slice(0, 4).join(' · ') + (ch.length > 4 ? ' · +' + (ch.length - 4) + ' more' : '')) : 'no changes') + '</span></span>';
+        '<br><span class="muted small">' + note + '</span></span>';
       b.onclick = () => {
-        if (!ch.length) { toast(u.name + ' already matches the field'); return; }
+        if (!ch.length) {
+          toast(keepAbsent && kept.length
+            ? u.name + ' matches the field. ' + kept.join(', ') + ' absent — use Drop absent to take them out.'
+            : u.name + ' already matches the field');
+          return;
+        }
         $('#saveUnitDlg').close();
         ask('Update ' + u.name + '? ' + ch.join(', ') + '.', () => {
-          const next = unitFromField(u);
-          u.members = next.members; u.pos = next.pos; u.layout = {};
+          const saved = unitFromField(u, keepAbsent);
+          u.members = saved.members; u.pos = saved.pos; u.layout = {};
           S.activeUnitId = u.id;
           save(); render();
           toast(u.name + ' saved');
@@ -1812,7 +1835,16 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
       };
       list.appendChild(b);
     });
-    $('#saveUnitDlg').showModal();
+    // Only worth a control when somebody is actually missing.
+    const ab = $('#saveUnitAbs');
+    ab.style.display = (anyAbsent || !keepAbsent) ? '' : 'none';
+    ab.textContent = keepAbsent ? 'Keeping absent players' : 'Dropping absent players';
+    ab.classList.toggle('primary', !keepAbsent);
+    $('#saveUnitAbsNote').textContent = keepAbsent
+      ? 'Members who are marked absent stay in the unit at their spot. Tap to drop them instead.'
+      : 'Members who are marked absent and are not on the field will be taken out of the unit.';
+    $('#saveUnitAbsNote').style.display = ab.style.display;
+    if (!$('#saveUnitDlg').open) $('#saveUnitDlg').showModal();
   }
 
   function allPositions(t) {
@@ -3286,12 +3318,20 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
   $('#chartFile').onchange = (e) => { const f = e.target.files[0]; if (f) scanPhoto(f); e.target.value = ''; };
   $('#chartCancel').onclick = () => $('#chartDlg').close();
   $('#chartImport').onclick = () => { if (S.impMode === 'roster') applyRoster(); else applyChart(); $('#chartDlg').close(); $('#chartText').value = ''; };
-  $('#unitFromLineup').onclick = () => { if (draft) { draft.members = lineupIds().slice(); Object.assign(draft.pos, spotsFor(draft.members)); renderUnitDraft(); } };
+  $('#unitFromLineup').onclick = () => {
+    if (!draft) return;
+    draft.members = lineupIds().slice();
+    const keep = {};
+    draft.members.forEach(id => { if (draft.pos[id]) keep[id] = draft.pos[id]; });
+    draft.pos = Object.assign(keep, spotsFor(draft.members));
+    renderUnitDraft();
+  };
   $('#saveUnitBtn').onclick = openSaveUnit;
   document.querySelectorAll('#unitSideSeg button').forEach(b => b.onclick = () => { if (draft) { draft.side = b.dataset.side; renderUnitDraft(); } });
   $('#saveUnitCancel').onclick = () => $('#saveUnitDlg').close();
+  $('#saveUnitAbs').onclick = () => { S.keepAbsentOnSave = S.keepAbsentOnSave === false; save(); openSaveUnit(); };
   $('#saveUnitNew').onclick = () => { $('#saveUnitDlg').close(); openUnitEditor(null, lineupIds()); };
-  $('#unitNone').onclick = () => { if (draft) { draft.members = []; renderUnitDraft(); } };
+  $('#unitNone').onclick = () => { if (draft) { draft.members = []; draft.pos = {}; renderUnitDraft(); } };
   $('#unitCancel').onclick = () => { $('#unitDlg').close(); draft = null; };
   $('#unitSave').onclick = () => {
     if (!draft) return;
@@ -3299,10 +3339,21 @@ VIPER, Derrico, Sokolik, Pezley"></textarea>
     if (!name) { $('#unitName').focus(); return toast('Give the unit a name'); }
     const alts = {};
     Object.keys(draft.alts).forEach(id => { if (draft.alts[id] && draft.members.indexOf(id) < 0) alts[id] = draft.alts[id]; });
-    if (draft.id) { const u = S.units.find(x => x.id === draft.id); u.name = name; u.members = draft.members.slice(); u.pos = Object.assign({}, draft.pos); u.alts = alts; u.side = draft.side; }
-    else S.units.push({ id: uid(), name: name, team: draft.team, side: draft.side, members: draft.members.slice(), pos: Object.assign({}, draft.pos), alts: alts });
+    // Spots belong to members. Left unpruned, a player taken out of the unit kept his spot in
+    // pos, so the sub sheet and the best-fit board still had him charted there.
+    const pos = {};
+    draft.members.forEach(id => { if (draft.pos[id]) pos[id] = draft.pos[id]; });
+    const noSpot = draft.members.filter(id => !pos[id] && player(id)).map(id => lastName(player(id)));
+    if (draft.id) {
+      const u = S.units.find(x => x.id === draft.id);
+      u.name = name; u.members = draft.members.slice(); u.pos = pos; u.alts = alts; u.side = draft.side;
+      const lay = {};
+      Object.keys(u.layout || {}).forEach(id => { if (pos[id]) lay[id] = u.layout[id]; });
+      u.layout = lay;
+    } else S.units.push({ id: uid(), name: name, team: draft.team, side: draft.side, members: draft.members.slice(), pos: pos, alts: alts });
     S.lastUnitSide = draft.side; S.unitListSide = draft.side;   // the list follows the unit just saved
-    $('#unitDlg').close(); draft = null; save(); render(); toast('Unit saved');
+    $('#unitDlg').close(); draft = null; save(); render();
+    toast('Unit saved' + (noSpot.length ? ' · no spot yet for ' + noSpot.join(', ') : ''));
   };
 
   document.querySelectorAll('#teamSeg button').forEach(b => b.onclick = () => setTeam(b.dataset.team));
